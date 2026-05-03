@@ -15,8 +15,8 @@
         "version": "baseline-consensus-v0",
         "confidence": 0.72,
         "probabilities": [
-          { "name": "Denver Nuggets", "probability": 0.545 },
-          { "name": "Minnesota Timberwolves", "probability": 0.455 }
+          { "name": "Denver Nuggets",           "probability": 0.545 },
+          { "name": "Minnesota Timberwolves",   "probability": 0.455 }
         ]
       },
       "books": [
@@ -24,7 +24,7 @@
           "name": "Bet365",
           "updatedAt": "2026-05-03T16:29:20.000Z",
           "outcomes": [
-            { "name": "Denver Nuggets", "price": 1.95 },
+            { "name": "Denver Nuggets",         "price": 1.95 },
             { "name": "Minnesota Timberwolves", "price": 1.91 }
           ]
         },
@@ -32,7 +32,7 @@
           "name": "Pinnacle",
           "updatedAt": "2026-05-03T16:29:04.000Z",
           "outcomes": [
-            { "name": "Denver Nuggets", "price": 1.84 },
+            { "name": "Denver Nuggets",         "price": 1.84 },
             { "name": "Minnesota Timberwolves", "price": 2.01 }
           ]
         },
@@ -40,7 +40,7 @@
           "name": "DraftKings",
           "updatedAt": "2026-05-03T16:28:55.000Z",
           "outcomes": [
-            { "name": "Denver Nuggets", "price": 1.86 },
+            { "name": "Denver Nuggets",         "price": 1.86 },
             { "name": "Minnesota Timberwolves", "price": 1.98 }
           ]
         },
@@ -48,7 +48,7 @@
           "name": "FanDuel",
           "updatedAt": "2026-05-03T16:28:42.000Z",
           "outcomes": [
-            { "name": "Denver Nuggets", "price": 1.87 },
+            { "name": "Denver Nuggets",         "price": 1.87 },
             { "name": "Minnesota Timberwolves", "price": 1.96 }
           ]
         },
@@ -56,7 +56,7 @@
           "name": "BetMGM",
           "updatedAt": "2026-05-03T16:27:48.000Z",
           "outcomes": [
-            { "name": "Denver Nuggets", "price": 1.85 },
+            { "name": "Denver Nuggets",         "price": 1.85 },
             { "name": "Minnesota Timberwolves", "price": 1.99 }
           ]
         }
@@ -76,7 +76,7 @@
         "confidence": 0.66,
         "probabilities": [
           { "name": "Arsenal", "probability": 0.512 },
-          { "name": "Draw", "probability": 0.247 },
+          { "name": "Draw",    "probability": 0.247 },
           { "name": "Chelsea", "probability": 0.241 }
         ]
       },
@@ -86,7 +86,7 @@
           "updatedAt": "2026-05-03T16:29:10.000Z",
           "outcomes": [
             { "name": "Arsenal", "price": 2.08 },
-            { "name": "Draw", "price": 3.55 },
+            { "name": "Draw",    "price": 3.55 },
             { "name": "Chelsea", "price": 3.80 }
           ]
         },
@@ -95,7 +95,7 @@
           "updatedAt": "2026-05-03T16:28:54.000Z",
           "outcomes": [
             { "name": "Arsenal", "price": 1.96 },
-            { "name": "Draw", "price": 3.62 },
+            { "name": "Draw",    "price": 3.62 },
             { "name": "Chelsea", "price": 3.92 }
           ]
         },
@@ -104,7 +104,7 @@
           "updatedAt": "2026-05-03T16:27:12.000Z",
           "outcomes": [
             { "name": "Arsenal", "price": 1.99 },
-            { "name": "Draw", "price": 3.60 },
+            { "name": "Draw",    "price": 3.60 },
             { "name": "Chelsea", "price": 3.90 }
           ]
         },
@@ -113,7 +113,7 @@
           "updatedAt": "2026-05-03T16:25:40.000Z",
           "outcomes": [
             { "name": "Arsenal", "price": 1.95 },
-            { "name": "Draw", "price": 3.58 },
+            { "name": "Draw",    "price": 3.58 },
             { "name": "Chelsea", "price": 3.85 }
           ]
         }
@@ -133,7 +133,7 @@
         "confidence": 0.59,
         "probabilities": [
           { "name": "Carlos Alcaraz", "probability": 0.415 },
-          { "name": "Jannik Sinner", "probability": 0.585 }
+          { "name": "Jannik Sinner",  "probability": 0.585 }
         ]
       },
       "books": [
@@ -142,7 +142,7 @@
           "updatedAt": "2026-05-03T16:29:35.000Z",
           "outcomes": [
             { "name": "Carlos Alcaraz", "price": 2.55 },
-            { "name": "Jannik Sinner", "price": 1.55 }
+            { "name": "Jannik Sinner",  "price": 1.55 }
           ]
         },
         {
@@ -150,7 +150,7 @@
           "updatedAt": "2026-05-03T16:29:21.000Z",
           "outcomes": [
             { "name": "Carlos Alcaraz", "price": 2.38 },
-            { "name": "Jannik Sinner", "price": 1.60 }
+            { "name": "Jannik Sinner",  "price": 1.60 }
           ]
         },
         {
@@ -158,7 +158,7 @@
           "updatedAt": "2026-05-03T16:29:02.000Z",
           "outcomes": [
             { "name": "Carlos Alcaraz", "price": 2.40 },
-            { "name": "Jannik Sinner", "price": 1.59 }
+            { "name": "Jannik Sinner",  "price": 1.59 }
           ]
         },
         {
@@ -166,7 +166,185 @@
           "updatedAt": "2026-05-03T16:19:02.000Z",
           "outcomes": [
             { "name": "Carlos Alcaraz", "price": 2.36 },
-            { "name": "Jannik Sinner", "price": 1.61 }
+            { "name": "Jannik Sinner",  "price": 1.61 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "epl-mci-liv-2026-05-04-h2h",
+      "sport": "soccer",
+      "league": "Premier League",
+      "event": "Manchester City vs Liverpool",
+      "commenceTime": "2026-05-04T16:30:00.000Z",
+      "snapshotAt": "2026-05-03T16:30:00.000Z",
+      "marketType": "1x2",
+      "settlementRules": "Regulation time only.",
+      "model": {
+        "version": "baseline-consensus-v0",
+        "confidence": 0.70,
+        "probabilities": [
+          { "name": "Manchester City", "probability": 0.408 },
+          { "name": "Draw",            "probability": 0.268 },
+          { "name": "Liverpool",       "probability": 0.324 }
+        ]
+      },
+      "books": [
+        {
+          "name": "Bet365",
+          "updatedAt": "2026-05-03T16:29:40.000Z",
+          "outcomes": [
+            { "name": "Manchester City", "price": 2.50 },
+            { "name": "Draw",            "price": 3.40 },
+            { "name": "Liverpool",       "price": 2.92 }
+          ]
+        },
+        {
+          "name": "Pinnacle",
+          "updatedAt": "2026-05-03T16:29:30.000Z",
+          "outcomes": [
+            { "name": "Manchester City", "price": 2.38 },
+            { "name": "Draw",            "price": 3.30 },
+            { "name": "Liverpool",       "price": 2.78 }
+          ]
+        },
+        {
+          "name": "Betfair",
+          "updatedAt": "2026-05-03T16:28:55.000Z",
+          "outcomes": [
+            { "name": "Manchester City", "price": 2.44 },
+            { "name": "Draw",            "price": 3.35 },
+            { "name": "Liverpool",       "price": 2.82 }
+          ]
+        },
+        {
+          "name": "DraftKings",
+          "updatedAt": "2026-05-03T16:28:12.000Z",
+          "outcomes": [
+            { "name": "Manchester City", "price": 2.40 },
+            { "name": "Draw",            "price": 3.32 },
+            { "name": "Liverpool",       "price": 2.80 }
+          ]
+        },
+        {
+          "name": "Unibet",
+          "updatedAt": "2026-05-03T16:27:00.000Z",
+          "outcomes": [
+            { "name": "Manchester City", "price": 2.42 },
+            { "name": "Draw",            "price": 3.28 },
+            { "name": "Liverpool",       "price": 2.76 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cricket-ind-aus-2026-05-04-wdw",
+      "sport": "cricket",
+      "league": "ICC T20 World Cup",
+      "event": "India vs Australia",
+      "commenceTime": "2026-05-05T10:00:00.000Z",
+      "snapshotAt": "2026-05-03T16:30:00.000Z",
+      "marketType": "match winner",
+      "settlementRules": "DLS method applies in rain-affected matches.",
+      "model": {
+        "version": "baseline-consensus-v0",
+        "confidence": 0.62,
+        "probabilities": [
+          { "name": "India",     "probability": 0.58 },
+          { "name": "Australia", "probability": 0.42 }
+        ]
+      },
+      "books": [
+        {
+          "name": "Bet365",
+          "updatedAt": "2026-05-03T16:29:00.000Z",
+          "outcomes": [
+            { "name": "India",     "price": 1.80 },
+            { "name": "Australia", "price": 2.05 }
+          ]
+        },
+        {
+          "name": "Betfair",
+          "updatedAt": "2026-05-03T16:28:30.000Z",
+          "outcomes": [
+            { "name": "India",     "price": 1.72 },
+            { "name": "Australia", "price": 2.14 }
+          ]
+        },
+        {
+          "name": "Pinnacle",
+          "updatedAt": "2026-05-03T16:28:10.000Z",
+          "outcomes": [
+            { "name": "India",     "price": 1.74 },
+            { "name": "Australia", "price": 2.10 }
+          ]
+        },
+        {
+          "name": "Unibet",
+          "updatedAt": "2026-05-03T16:20:00.000Z",
+          "outcomes": [
+            { "name": "India",     "price": 1.71 },
+            { "name": "Australia", "price": 2.12 }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "nfl-kc-buf-2026-05-05-h2h",
+      "sport": "football",
+      "league": "NFL",
+      "event": "Kansas City Chiefs vs Buffalo Bills",
+      "commenceTime": "2026-05-05T23:25:00.000Z",
+      "snapshotAt": "2026-05-03T16:30:00.000Z",
+      "marketType": "moneyline",
+      "settlementRules": "Regular season result including overtime.",
+      "model": {
+        "version": "baseline-consensus-v0",
+        "confidence": 0.68,
+        "probabilities": [
+          { "name": "Kansas City Chiefs", "probability": 0.52 },
+          { "name": "Buffalo Bills",      "probability": 0.48 }
+        ]
+      },
+      "books": [
+        {
+          "name": "Bet365",
+          "updatedAt": "2026-05-03T16:29:45.000Z",
+          "outcomes": [
+            { "name": "Kansas City Chiefs", "price": 2.05 },
+            { "name": "Buffalo Bills",      "price": 1.85 }
+          ]
+        },
+        {
+          "name": "Pinnacle",
+          "updatedAt": "2026-05-03T16:29:20.000Z",
+          "outcomes": [
+            { "name": "Kansas City Chiefs", "price": 1.92 },
+            { "name": "Buffalo Bills",      "price": 1.94 }
+          ]
+        },
+        {
+          "name": "DraftKings",
+          "updatedAt": "2026-05-03T16:28:55.000Z",
+          "outcomes": [
+            { "name": "Kansas City Chiefs", "price": 1.95 },
+            { "name": "Buffalo Bills",      "price": 1.91 }
+          ]
+        },
+        {
+          "name": "FanDuel",
+          "updatedAt": "2026-05-03T16:28:10.000Z",
+          "outcomes": [
+            { "name": "Kansas City Chiefs", "price": 1.94 },
+            { "name": "Buffalo Bills",      "price": 1.92 }
+          ]
+        },
+        {
+          "name": "BetMGM",
+          "updatedAt": "2026-05-03T16:27:30.000Z",
+          "outcomes": [
+            { "name": "Kansas City Chiefs", "price": 1.93 },
+            { "name": "Buffalo Bills",      "price": 1.93 }
           ]
         }
       ]

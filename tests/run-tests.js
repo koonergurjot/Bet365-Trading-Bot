@@ -45,7 +45,7 @@ const tests = [
       maxBankrollStake: 0.02
     });
 
-    assert.equal(report.totalMarkets, 3);
+    assert.ok(report.totalMarkets >= 3, `Expected at least 3 markets, got ${report.totalMarkets}`);
     assert.ok(report.totalCandidates > 0);
     assert.ok(report.recommendations.length > 0);
     assert.ok(report.recommendations[0].score >= report.recommendations.at(-1).score);

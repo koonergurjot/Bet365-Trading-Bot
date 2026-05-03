@@ -4,77 +4,467 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Bet365 Edge Brain</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./src/styles.css" />
   </head>
   <body>
-    <main class="shell">
-      <section class="topbar" aria-label="Application header">
+
+    <!-- ── Top Bar ─────────────────────────────────────────── -->
+    <header class="topbar" aria-label="App header">
+      <div class="topbar-brand">
+        <div class="topbar-logo" title="Bet365 Edge Brain">🧠</div>
         <div>
-          <p class="eyebrow">Recommendation engine v0.1</p>
-          <h1>Bet365 Edge Brain</h1>
+          <div class="topbar-title">Bet365 Edge Brain</div>
+          <div class="topbar-sub">Recommendation Engine v0.2</div>
         </div>
-        <div class="status-strip" aria-label="Data quality status">
-          <span id="snapshotAge">Snapshot: loading</span>
-          <span id="marketCount">Markets: 0</span>
-          <span id="signalCount">Signals: 0</span>
+      </div>
+
+      <div class="topbar-stats" id="topbarStats">
+        <div class="stat-chip">
+          <span class="stat-label">Snapshot</span>
+          <span class="stat-value" id="statAge">—</span>
         </div>
-      </section>
+        <div class="stat-chip">
+          <span class="stat-label">Markets</span>
+          <span class="stat-value" id="statMarkets">0</span>
+        </div>
+        <div class="stat-chip good">
+          <span class="stat-label">Signals</span>
+          <span class="stat-value" id="statSignals">0</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-label">Bankroll</span>
+          <span class="stat-value" id="statBankroll">$1,000</span>
+        </div>
+      </div>
 
-      <section class="workspace-grid">
-        <aside class="panel controls-panel" aria-label="Engine controls">
-          <h2>Engine Controls</h2>
-          <label>
-            Bankroll
-            <input id="bankrollInput" type="number" min="1" step="50" value="1000" />
-          </label>
-          <label>
-            Minimum expected value
-            <input id="minEvInput" type="number" step="0.01" value="0.03" />
-          </label>
-          <label>
-            Minimum confidence
-            <input id="minConfidenceInput" type="number" min="0" max="1" step="0.05" value="0.55" />
-          </label>
-          <label>
-            Max bankroll stake
-            <input id="maxStakeInput" type="number" min="0.001" max="0.1" step="0.001" value="0.02" />
-          </label>
-          <button id="runButton" type="button">Run Recommendations</button>
-          <button id="loadSampleButton" type="button" class="secondary">Reload Sample Data</button>
-        </aside>
+      <div class="flex gap-2">
+        <button class="btn btn-secondary btn-sm" id="btnReloadSample" title="Reload sample data">↺ Sample</button>
+        <button class="btn btn-primary btn-sm" id="btnRun">▶ Run Engine</button>
+      </div>
+    </header>
 
-        <section class="panel table-panel" aria-label="Recommendation results">
-          <div class="panel-heading">
-            <h2>Signals</h2>
-            <span id="engineSummary">Waiting for data</span>
+    <!-- ── Tab Nav ────────────────────────────────────────── -->
+    <nav class="tab-nav" role="tablist" aria-label="Main navigation">
+      <button class="tab-btn active" role="tab" data-tab="signals" aria-selected="true">
+        📊 Signals
+        <span class="tab-badge" id="signalsBadge">0</span>
+      </button>
+      <button class="tab-btn" role="tab" data-tab="calculator" aria-selected="false">
+        🧮 Calculator
+      </button>
+      <button class="tab-btn" role="tab" data-tab="tracker" aria-selected="false">
+        📋 Bet Tracker
+        <span class="tab-badge" id="trackerBadge">0</span>
+      </button>
+      <button class="tab-btn" role="tab" data-tab="data" aria-selected="false">
+        📁 Data / JSON
+      </button>
+    </nav>
+
+    <!-- ════════════════════════════════════════════════════
+         TAB: SIGNALS
+    ════════════════════════════════════════════════════ -->
+    <section class="tab-content active" id="tab-signals" role="tabpanel">
+
+      <!-- Metric cards -->
+      <div class="metric-grid" id="metricGrid">
+        <div class="metric-card">
+          <div class="metric-label">Total Markets</div>
+          <div class="metric-value accent" id="mMarkets">—</div>
+          <div class="metric-sub">in snapshot</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Candidates</div>
+          <div class="metric-value" id="mCandidates">—</div>
+          <div class="metric-sub">passed engine</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Top EV</div>
+          <div class="metric-value green" id="mTopEv">—</div>
+          <div class="metric-sub">best edge found</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Avg Confidence</div>
+          <div class="metric-value" id="mAvgConf">—</div>
+          <div class="metric-sub">across signals</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Total Stake</div>
+          <div class="metric-value amber" id="mTotalStake">—</div>
+          <div class="metric-sub">if all placed</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Avg Data Quality</div>
+          <div class="metric-value" id="mAvgQuality">—</div>
+          <div class="metric-sub">reliability score</div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filter-bar" id="filterBar">
+        <span class="filter-label">Sport</span>
+        <div class="filter-chips" id="sportFilters">
+          <button class="filter-chip active" data-filter-sport="all">All</button>
+        </div>
+        <div class="filter-divider"></div>
+        <span class="filter-label">Risk</span>
+        <div class="filter-chips" id="riskFilters">
+          <button class="filter-chip active" data-filter-risk="all">All</button>
+          <button class="filter-chip" data-filter-risk="Low">Low</button>
+          <button class="filter-chip" data-filter-risk="Medium">Medium</button>
+          <button class="filter-chip" data-filter-risk="High">High</button>
+        </div>
+        <div class="filter-divider"></div>
+        <span class="filter-label">Sort</span>
+        <select class="filter-select" id="sortSelect">
+          <option value="score">Score (default)</option>
+          <option value="ev">Expected Value</option>
+          <option value="confidence">Confidence</option>
+          <option value="stake">Stake amount</option>
+        </select>
+        <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">⬇ CSV</button>
+      </div>
+
+      <!-- Signals table -->
+      <div class="panel" id="signalsPanel">
+        <div class="panel-header">
+          <div class="panel-title">📈 Value Signals</div>
+          <span class="text-muted" id="signalsSummary">Run the engine to see signals</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Bet / Event</th>
+                <th class="right">Bet365</th>
+                <th class="right">Fair Value</th>
+                <th class="right">EV</th>
+                <th class="right">Kelly Stake</th>
+                <th class="center">Risk</th>
+                <th class="right">Data Quality</th>
+                <th class="center">Action</th>
+              </tr>
+            </thead>
+            <tbody id="signalsBody">
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <div class="empty-icon">🎯</div>
+                    <div class="empty-title">No signals yet</div>
+                    <div class="empty-sub">Click "Run Engine" or load sample data to see value bets</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Disclaimer -->
+      <div class="alert alert-amber" role="alert">
+        ⚠️ <span>Sample data only. Production requires live odds from a licensed provider via a server-side worker — API keys must never be in the browser. See <strong>docs/DATA_PROVIDERS.md</strong> for setup.</span>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         TAB: CALCULATOR
+    ════════════════════════════════════════════════════ -->
+    <section class="tab-content" id="tab-calculator" role="tabpanel">
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🧮 Probability &amp; Value Calculator</div>
+          <span class="text-muted">Manually evaluate any bet before placing it</span>
+        </div>
+        <div class="panel-body">
+          <div class="calc-layout">
+
+            <!-- Inputs -->
+            <div class="flex flex-col gap-3">
+              <div class="controls-grid">
+                <div class="field">
+                  <label class="field-label" for="calcOdds">Decimal Odds (Bet365)</label>
+                  <input type="number" id="calcOdds" min="1.01" step="0.01" value="2.10" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="calcProb">Your Probability Estimate (%)</label>
+                  <input type="number" id="calcProb" min="1" max="99" step="0.5" value="52" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="calcBankroll">Bankroll ($)</label>
+                  <input type="number" id="calcBankroll" min="1" step="100" value="1000" />
+                </div>
+                <div class="field">
+                  <label class="field-label" for="calcKellyFrac">Kelly Fraction</label>
+                  <input type="number" id="calcKellyFrac" min="0.05" max="1" step="0.05" value="0.25" />
+                </div>
+              </div>
+              <div class="mt-3">
+                <div class="alert alert-blue" style="font-size:12px">
+                  💡 <span><strong>How to use:</strong> Enter the Bet365 decimal odds and your own probability estimate for that outcome. The engine calculates whether there's positive expected value (edge). A positive EV means this bet is profitable long-term if your probability is correct.</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Results -->
+            <div>
+              <div class="calc-result" id="calcResults">
+                <div class="calc-row">
+                  <span class="calc-row-label">Implied probability (Bet365)</span>
+                  <span class="calc-row-value" id="calcImplied">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Your probability</span>
+                  <span class="calc-row-value" id="calcYourProb">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Edge (yours − implied)</span>
+                  <span class="calc-row-value" id="calcEdge">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Expected value per $1</span>
+                  <span class="calc-row-value" id="calcEV">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Full Kelly stake</span>
+                  <span class="calc-row-value" id="calcFullKelly">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Fractional Kelly stake</span>
+                  <span class="calc-row-value" id="calcFracKelly">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Stake amount</span>
+                  <span class="calc-row-value" id="calcStakeAmt">—</span>
+                </div>
+                <div class="calc-row">
+                  <span class="calc-row-label">Potential return</span>
+                  <span class="calc-row-value" id="calcReturn">—</span>
+                </div>
+              </div>
+
+              <div id="calcVerdict" class="verdict-box neutral">
+                <div class="verdict-label">Verdict</div>
+                <div class="verdict-text" id="calcVerdictText">Enter odds and probability</div>
+                <div class="verdict-sub" id="calcVerdictSub">—</div>
+              </div>
+            </div>
           </div>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Bet</th>
-                  <th>Bet365</th>
-                  <th>Fair</th>
-                  <th>EV</th>
-                  <th>Stake</th>
-                  <th>Risk</th>
-                  <th>Data</th>
-                </tr>
-              </thead>
-              <tbody id="resultsBody"></tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-
-      <section class="panel inspector-panel" aria-label="Market editor">
-        <div class="panel-heading">
-          <h2>Market Snapshot JSON</h2>
-          <span>Paste normalized provider data here while the backend adapters are being built.</span>
         </div>
-        <textarea id="snapshotEditor" spellcheck="false"></textarea>
-      </section>
-    </main>
+      </div>
+
+      <!-- Odds converter -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">🔄 Odds Converter</div>
+          <span class="text-muted">Convert between decimal, American, and implied probability</span>
+        </div>
+        <div class="panel-body">
+          <div class="controls-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px,1fr))">
+            <div class="field">
+              <label class="field-label" for="convDecimal">Decimal</label>
+              <input type="number" id="convDecimal" step="0.01" value="2.00" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="convAmerican">American</label>
+              <input type="number" id="convAmerican" step="1" value="100" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="convImplied">Implied Prob (%)</label>
+              <input type="number" id="convImplied" step="0.1" value="50.0" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         TAB: BET TRACKER
+    ════════════════════════════════════════════════════ -->
+    <section class="tab-content" id="tab-tracker" role="tabpanel">
+
+      <!-- Summary stats -->
+      <div class="tracker-summary" id="trackerSummary">
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Total Bets</div>
+          <div class="tracker-stat-value" id="tStatTotal">0</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Won</div>
+          <div class="tracker-stat-value" style="color:var(--green)" id="tStatWon">0</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Lost</div>
+          <div class="tracker-stat-value" style="color:var(--red)" id="tStatLost">0</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Pending</div>
+          <div class="tracker-stat-value" style="color:var(--amber)" id="tStatPending">0</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">P&amp;L</div>
+          <div class="tracker-stat-value" id="tStatPnl">$0</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">ROI</div>
+          <div class="tracker-stat-value" id="tStatRoi">—</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Win Rate</div>
+          <div class="tracker-stat-value" id="tStatWinRate">—</div>
+        </div>
+        <div class="tracker-stat">
+          <div class="tracker-stat-label">Avg EV</div>
+          <div class="tracker-stat-value" id="tStatAvgEv">—</div>
+        </div>
+      </div>
+
+      <!-- Add bet form -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">➕ Record Bet</div>
+        </div>
+        <div class="add-bet-form" id="addBetForm">
+          <div class="field">
+            <label class="field-label" for="betDesc">Selection / Event</label>
+            <input type="text" id="betDesc" placeholder="e.g. Arsenal to Win — Arsenal vs Chelsea" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="betOdds">Decimal Odds</label>
+            <input type="number" id="betOdds" min="1.01" step="0.01" value="2.10" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="betStake">Stake ($)</label>
+            <input type="number" id="betStake" min="0.01" step="1" value="20" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="betEv">EV at time of bet</label>
+            <input type="number" id="betEv" step="0.001" placeholder="0.047" />
+          </div>
+          <div class="field">
+            <label class="field-label" for="betStatus">Status</label>
+            <select id="betStatus">
+              <option value="pending">Pending</option>
+              <option value="won">Won</option>
+              <option value="lost">Lost</option>
+              <option value="void">Void</option>
+            </select>
+          </div>
+          <div class="field" style="grid-column: 1 / -1; display:flex; gap:8px; flex-direction:row; align-items:flex-end;">
+            <button class="btn btn-green" id="btnAddBet">Add Bet</button>
+            <button class="btn btn-secondary btn-sm ml-auto" id="btnClearTracker">Clear All</button>
+            <button class="btn btn-secondary btn-sm" id="btnExportTracker">⬇ CSV</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table id="trackerTable">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Selection / Event</th>
+                <th class="right">Odds</th>
+                <th class="right">Stake</th>
+                <th class="right">P&amp;L</th>
+                <th class="right">EV</th>
+                <th class="center">Status</th>
+                <th class="center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trackerBody">
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <div class="empty-icon">📋</div>
+                    <div class="empty-title">No bets recorded</div>
+                    <div class="empty-sub">Use "Add Bet" above, or click "Track" on a signal to record it here</div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="alert alert-blue">
+        ℹ️ <span>Bets are stored in memory and <strong>reset when you refresh the page</strong>. A persistent backend is Phase 4 on the roadmap.</span>
+      </div>
+
+    </section>
+
+    <!-- ════════════════════════════════════════════════════
+         TAB: DATA / JSON
+    ════════════════════════════════════════════════════ -->
+    <section class="tab-content" id="tab-data" role="tabpanel">
+
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">📁 Market Snapshot JSON</div>
+          <div class="flex gap-2">
+            <button class="btn btn-secondary btn-sm" id="btnFormatJson">Format JSON</button>
+            <button class="btn btn-secondary btn-sm" id="btnReloadSample2">Load Sample</button>
+            <button class="btn btn-primary btn-sm" id="btnRunFromData">▶ Run Engine</button>
+          </div>
+        </div>
+
+        <div class="snapshot-editor-wrap" style="padding:16px">
+          <div>
+            <textarea id="snapshotEditor" spellcheck="false" aria-label="Market snapshot JSON editor"></textarea>
+          </div>
+          <div class="editor-help">
+            <div class="editor-help-title">Schema Reference</div>
+
+            <div class="schema-field">
+              <div class="schema-key">snapshotAt</div>
+              <div class="schema-desc">ISO timestamp of when data was captured</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">markets[ ]</div>
+              <div class="schema-desc">Array of market objects</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">market.sport</div>
+              <div class="schema-desc">basketball, soccer, tennis, cricket…</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">market.books[ ]</div>
+              <div class="schema-desc">Must include "Bet365" + ≥ 3 peers</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">book.outcomes[ ]</div>
+              <div class="schema-desc">{ name, price } — price in decimal</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">market.model</div>
+              <div class="schema-desc">Optional: { confidence, probabilities[ ] }</div>
+            </div>
+            <div class="schema-field">
+              <div class="schema-key">market.settlementRules</div>
+              <div class="schema-desc">String. Missing = 15% quality penalty</div>
+            </div>
+
+            <div class="alert alert-amber mt-3">
+              ⚠️ <span>Never paste API keys here. This editor is visible in browser dev tools.</span>
+            </div>
+
+            <div class="mt-3">
+              <div class="editor-help-title">Trusted peer books</div>
+              <div class="text-muted mt-3">Pinnacle, Betfair, Matchbook, Circa, DraftKings, FanDuel receive 1.25× weight in consensus probability calculation.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="alert alert-blue">
+        🔌 <span><strong>Phase 1 goal:</strong> Replace this manual JSON editor with a Cloudflare Worker that fetches live odds from The Odds API and normalizes them into this schema automatically. See <strong>docs/DATA_PROVIDERS.md</strong>.</span>
+      </div>
+
+    </section>
 
     <script type="module" src="./src/app.js"></script>
   </body>
