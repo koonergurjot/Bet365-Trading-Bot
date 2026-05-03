@@ -1,26 +1,6 @@
 # AI Collaboration Rules
 
-This repo is designed for Codex, Claude Cowork, and future AI assistants to edit safely.
-
-## Repo & Hosting
-
-- **GitHub:** https://github.com/koonergurjot/bet365-edge-brain
-- **Cloudflare Pages:** deploy from main branch, build command `exit 0`, output dir `/`
-- **Current phase:** Phase 0 complete → Phase 1 (live data adapter) is next
-
-## File Map
-
-| File | Purpose |
-|---|---|
-| `index.html` | Full SPA: Signals, Calculator, Tracker, Data tabs |
-| `src/app.js` | UI logic, filters, tracker, calculator, CSV export |
-| `src/styles.css` | Dark-mode design system |
-| `src/engine/oddsMath.js` | Pure math: EV, Kelly, vig removal, conversions |
-| `src/engine/recommendationEngine.js` | Main engine: analyzeSnapshot → recommendations |
-| `src/data/sample-markets.json` | Multi-sport demo data (NBA, EPL, ATP, Cricket, NFL) |
-| `docs/ENGINE_CONTRACT.md` | Market snapshot schema spec |
-| `docs/ROADMAP.md` | Phase roadmap |
-| `docs/DATA_PROVIDERS.md` | Odds API options |
+This repo is designed for Codex, Claude, and future AI assistants to edit safely.
 
 ## Prime Directive
 

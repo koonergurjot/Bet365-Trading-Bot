@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Bet365 Edge Brain
 
 Standalone recommendation engine for comparing Bet365 odds against broader market prices, estimating probability, scoring expected value, and sizing risk-aware stakes.
@@ -52,7 +51,3 @@ See:
 - [Roadmap](./docs/ROADMAP.md)
 - [Cloudflare Pages](./docs/CLOUDFLARE_PAGES.md)
 - [Engine Contract](./docs/ENGINE_CONTRACT.md)
-=======
-# Bet365-Trading-Bot
-Bet365 Trading Bot
->>>>>>> 26fd268d0885d9cbaeb0d3c74d8e8cac98d9c4fa
