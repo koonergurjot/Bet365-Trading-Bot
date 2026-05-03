@@ -553,3 +553,68 @@ textarea {
 .font-bold { font-weight: 700; }
 .mt-3 { margin-top: 12px; }
 .mt-4 { margin-top: 16px; }
+
+/* ── Live Data Button ────────────────────────────────────── */
+.btn-live {
+  background: rgba(239,68,68,0.18);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,0.35);
+}
+.btn-live:hover { background: rgba(239,68,68,0.28); }
+.btn-live.polling {
+  background: rgba(34,197,94,0.18);
+  color: var(--green);
+  border-color: rgba(34,197,94,0.35);
+  animation: pulse-border 2s ease-in-out infinite;
+}
+.btn-live:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@keyframes pulse-border {
+  0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+  50%      { box-shadow: 0 0 0 3px rgba(34,197,94,0.2); }
+}
+
+/* Live status chip */
+.stat-chip.live-active  .stat-value { color: var(--green); }
+.stat-chip.live-polling .stat-value { color: var(--green); }
+.stat-chip.live-off     .stat-value { color: var(--text-muted); }
+.stat-chip.live-error   .stat-value { color: var(--red); }
+
+/* ── Live Data Info Cards (Data tab) ─────────────────────── */
+.stat-info-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.stat-info-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.6px; font-weight: 600; }
+.stat-info-value { font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1; }
+.stat-info-sub   { font-size: 11px; color: var(--text-muted); }
+
+/* Toast notifications */
+#toastContainer {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+.toast {
+  padding: 10px 16px;
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  max-width: 340px;
+  animation: toast-in .2s ease;
+  pointer-events: auto;
+}
+.toast-success { background: var(--green-dim); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+.toast-error   { background: var(--red-dim);   color: var(--red);   border: 1px solid rgba(239,68,68,0.3); }
+.toast-info    { background: var(--accent-dim); color: var(--accent-bright); border: 1px solid rgba(79,142,247,0.25); }
+@keyframes toast-in { from { opacity:0; transform: translateY(8px); } to { opacity:1; transform: translateY(0); } }

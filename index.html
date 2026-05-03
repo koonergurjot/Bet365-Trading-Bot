@@ -11,20 +11,20 @@
   </head>
   <body>
 
-    <!-- ── Top Bar ─────────────────────────────────────────── -->
+    <!-- Top Bar -->
     <header class="topbar" aria-label="App header">
       <div class="topbar-brand">
-        <div class="topbar-logo" title="Bet365 Edge Brain">🧠</div>
+        <div class="topbar-logo" title="Bet365 Edge Brain">&#x1F9E0;</div>
         <div>
           <div class="topbar-title">Bet365 Edge Brain</div>
-          <div class="topbar-sub">Recommendation Engine v0.2</div>
+          <div class="topbar-sub">Recommendation Engine v0.3 &middot; Live</div>
         </div>
       </div>
 
       <div class="topbar-stats" id="topbarStats">
         <div class="stat-chip">
           <span class="stat-label">Snapshot</span>
-          <span class="stat-value" id="statAge">—</span>
+          <span class="stat-value" id="statAge">&mdash;</span>
         </div>
         <div class="stat-chip">
           <span class="stat-label">Markets</span>
@@ -38,72 +38,78 @@
           <span class="stat-label">Bankroll</span>
           <span class="stat-value" id="statBankroll">$1,000</span>
         </div>
+        <div class="stat-chip" id="chipQuota" title="Odds API requests remaining">
+          <span class="stat-label">Quota</span>
+          <span class="stat-value" id="statQuota">&mdash;</span>
+        </div>
+        <div class="stat-chip live-off" id="chipLiveStatus" title="Live data status">
+          <span class="stat-label">Live</span>
+          <span class="stat-value" id="statLiveStatus">off</span>
+        </div>
       </div>
 
       <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" id="btnReloadSample" title="Reload sample data">↺ Sample</button>
-        <button class="btn btn-primary btn-sm" id="btnRun">▶ Run Engine</button>
+        <button class="btn btn-secondary btn-sm" id="btnReloadSample">&#x21BA; Sample</button>
+        <button class="btn btn-live btn-sm" id="btnFetchLive" title="Fetch live odds">&#x26A1; Fetch Live</button>
+        <button class="btn btn-secondary btn-sm" id="btnTogglePoll" title="Toggle auto-refresh">&#x25B7; Auto</button>
+        <button class="btn btn-primary btn-sm" id="btnRun">&#x25B6; Run Engine</button>
       </div>
     </header>
 
-    <!-- ── Tab Nav ────────────────────────────────────────── -->
+    <!-- Tab Nav -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn active" role="tab" data-tab="signals" aria-selected="true">
-        📊 Signals
+        &#x1F4CA; Signals
         <span class="tab-badge" id="signalsBadge">0</span>
       </button>
       <button class="tab-btn" role="tab" data-tab="calculator" aria-selected="false">
-        🧮 Calculator
+        &#x1F9EE; Calculator
       </button>
       <button class="tab-btn" role="tab" data-tab="tracker" aria-selected="false">
-        📋 Bet Tracker
+        &#x1F4CB; Bet Tracker
         <span class="tab-badge" id="trackerBadge">0</span>
       </button>
       <button class="tab-btn" role="tab" data-tab="data" aria-selected="false">
-        📁 Data / JSON
+        &#x1F4C1; Data / JSON
       </button>
     </nav>
 
-    <!-- ════════════════════════════════════════════════════
-         TAB: SIGNALS
-    ════════════════════════════════════════════════════ -->
+    <!-- TAB: SIGNALS -->
     <section class="tab-content active" id="tab-signals" role="tabpanel">
 
-      <!-- Metric cards -->
       <div class="metric-grid" id="metricGrid">
         <div class="metric-card">
           <div class="metric-label">Total Markets</div>
-          <div class="metric-value accent" id="mMarkets">—</div>
+          <div class="metric-value accent" id="mMarkets">&mdash;</div>
           <div class="metric-sub">in snapshot</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Candidates</div>
-          <div class="metric-value" id="mCandidates">—</div>
+          <div class="metric-value" id="mCandidates">&mdash;</div>
           <div class="metric-sub">passed engine</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Top EV</div>
-          <div class="metric-value green" id="mTopEv">—</div>
+          <div class="metric-value green" id="mTopEv">&mdash;</div>
           <div class="metric-sub">best edge found</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Avg Confidence</div>
-          <div class="metric-value" id="mAvgConf">—</div>
+          <div class="metric-value" id="mAvgConf">&mdash;</div>
           <div class="metric-sub">across signals</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Total Stake</div>
-          <div class="metric-value amber" id="mTotalStake">—</div>
+          <div class="metric-value amber" id="mTotalStake">&mdash;</div>
           <div class="metric-sub">if all placed</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Avg Data Quality</div>
-          <div class="metric-value" id="mAvgQuality">—</div>
+          <div class="metric-value" id="mAvgQuality">&mdash;</div>
           <div class="metric-sub">reliability score</div>
         </div>
       </div>
 
-      <!-- Filters -->
       <div class="filter-bar" id="filterBar">
         <span class="filter-label">Sport</span>
         <div class="filter-chips" id="sportFilters">
@@ -125,13 +131,12 @@
           <option value="confidence">Confidence</option>
           <option value="stake">Stake amount</option>
         </select>
-        <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">⬇ CSV</button>
+        <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">&#x2B07; CSV</button>
       </div>
 
-      <!-- Signals table -->
       <div class="panel" id="signalsPanel">
         <div class="panel-header">
-          <div class="panel-title">📈 Value Signals</div>
+          <div class="panel-title">&#x1F4C8; Value Signals</div>
           <span class="text-muted" id="signalsSummary">Run the engine to see signals</span>
         </div>
         <div class="table-wrap">
@@ -149,41 +154,37 @@
               </tr>
             </thead>
             <tbody id="signalsBody">
-              <tr>
-                <td colspan="8">
-                  <div class="empty-state">
-                    <div class="empty-icon">🎯</div>
-                    <div class="empty-title">No signals yet</div>
-                    <div class="empty-sub">Click "Run Engine" or load sample data to see value bets</div>
-                  </div>
-                </td>
-              </tr>
+              <tr><td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-icon">&#x1F3AF;</div>
+                  <div class="empty-title">No signals yet</div>
+                  <div class="empty-sub">Click &#x26A1; Fetch Live for real odds, or &#x25B6; Run Engine on sample data</div>
+                </div>
+              </td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <!-- Disclaimer -->
-      <div class="alert alert-amber" role="alert">
-        ⚠️ <span>Sample data only. Production requires live odds from a licensed provider via a server-side worker — API keys must never be in the browser. See <strong>docs/DATA_PROVIDERS.md</strong> for setup.</span>
+      <div class="alert alert-blue" id="liveStatusBar" role="status" style="display:none">
+        &#x1F534; <span id="liveStatusMsg">Live data active</span>
+      </div>
+
+      <div class="alert alert-amber" id="sampleDisclaimer" role="alert">
+        &#x26A0;&#xFE0F; <span>Sample data only &mdash; click <strong>&#x26A1; Fetch Live</strong> to scan real odds from The Odds API + OddsBlaze. Keys in <strong>src/config.js</strong>.</span>
       </div>
 
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         TAB: CALCULATOR
-    ════════════════════════════════════════════════════ -->
+    <!-- TAB: CALCULATOR -->
     <section class="tab-content" id="tab-calculator" role="tabpanel">
-
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🧮 Probability &amp; Value Calculator</div>
+          <div class="panel-title">&#x1F9EE; Probability &amp; Value Calculator</div>
           <span class="text-muted">Manually evaluate any bet before placing it</span>
         </div>
         <div class="panel-body">
           <div class="calc-layout">
-
-            <!-- Inputs -->
             <div class="flex flex-col gap-3">
               <div class="controls-grid">
                 <div class="field">
@@ -205,62 +206,58 @@
               </div>
               <div class="mt-3">
                 <div class="alert alert-blue" style="font-size:12px">
-                  💡 <span><strong>How to use:</strong> Enter the Bet365 decimal odds and your own probability estimate for that outcome. The engine calculates whether there's positive expected value (edge). A positive EV means this bet is profitable long-term if your probability is correct.</span>
+                  &#x1F4A1; <span><strong>How to use:</strong> Enter Bet365 decimal odds and your probability estimate. Positive EV = profitable long-term if your probability is correct.</span>
                 </div>
               </div>
             </div>
-
-            <!-- Results -->
             <div>
               <div class="calc-result" id="calcResults">
                 <div class="calc-row">
                   <span class="calc-row-label">Implied probability (Bet365)</span>
-                  <span class="calc-row-value" id="calcImplied">—</span>
+                  <span class="calc-row-value" id="calcImplied">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Your probability</span>
-                  <span class="calc-row-value" id="calcYourProb">—</span>
+                  <span class="calc-row-value" id="calcYourProb">&mdash;</span>
                 </div>
                 <div class="calc-row">
-                  <span class="calc-row-label">Edge (yours − implied)</span>
-                  <span class="calc-row-value" id="calcEdge">—</span>
+                  <span class="calc-row-label">Edge (yours &minus; implied)</span>
+                  <span class="calc-row-value" id="calcEdge">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Expected value per $1</span>
-                  <span class="calc-row-value" id="calcEV">—</span>
+                  <span class="calc-row-value" id="calcEV">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Full Kelly stake</span>
-                  <span class="calc-row-value" id="calcFullKelly">—</span>
+                  <span class="calc-row-value" id="calcFullKelly">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Fractional Kelly stake</span>
-                  <span class="calc-row-value" id="calcFracKelly">—</span>
+                  <span class="calc-row-value" id="calcFracKelly">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Stake amount</span>
-                  <span class="calc-row-value" id="calcStakeAmt">—</span>
+                  <span class="calc-row-value" id="calcStakeAmt">&mdash;</span>
                 </div>
                 <div class="calc-row">
                   <span class="calc-row-label">Potential return</span>
-                  <span class="calc-row-value" id="calcReturn">—</span>
+                  <span class="calc-row-value" id="calcReturn">&mdash;</span>
                 </div>
               </div>
-
               <div id="calcVerdict" class="verdict-box neutral">
                 <div class="verdict-label">Verdict</div>
                 <div class="verdict-text" id="calcVerdictText">Enter odds and probability</div>
-                <div class="verdict-sub" id="calcVerdictSub">—</div>
+                <div class="verdict-sub" id="calcVerdictSub">&mdash;</div>
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Odds converter -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">🔄 Odds Converter</div>
+          <div class="panel-title">&#x1F504; Odds Converter</div>
           <span class="text-muted">Convert between decimal, American, and implied probability</span>
         </div>
         <div class="panel-body">
@@ -280,15 +277,10 @@
           </div>
         </div>
       </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         TAB: BET TRACKER
-    ════════════════════════════════════════════════════ -->
+    <!-- TAB: BET TRACKER -->
     <section class="tab-content" id="tab-tracker" role="tabpanel">
-
-      <!-- Summary stats -->
       <div class="tracker-summary" id="trackerSummary">
         <div class="tracker-stat">
           <div class="tracker-stat-label">Total Bets</div>
@@ -312,22 +304,21 @@
         </div>
         <div class="tracker-stat">
           <div class="tracker-stat-label">ROI</div>
-          <div class="tracker-stat-value" id="tStatRoi">—</div>
+          <div class="tracker-stat-value" id="tStatRoi">&mdash;</div>
         </div>
         <div class="tracker-stat">
           <div class="tracker-stat-label">Win Rate</div>
-          <div class="tracker-stat-value" id="tStatWinRate">—</div>
+          <div class="tracker-stat-value" id="tStatWinRate">&mdash;</div>
         </div>
         <div class="tracker-stat">
           <div class="tracker-stat-label">Avg EV</div>
-          <div class="tracker-stat-value" id="tStatAvgEv">—</div>
+          <div class="tracker-stat-value" id="tStatAvgEv">&mdash;</div>
         </div>
       </div>
 
-      <!-- Add bet form -->
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">➕ Record Bet</div>
+          <div class="panel-title">&#x2795; Record Bet</div>
         </div>
         <div class="add-bet-form" id="addBetForm">
           <div class="field">
@@ -355,13 +346,12 @@
               <option value="void">Void</option>
             </select>
           </div>
-          <div class="field" style="grid-column: 1 / -1; display:flex; gap:8px; flex-direction:row; align-items:flex-end;">
+          <div class="field" style="grid-column:1/-1;display:flex;gap:8px;flex-direction:row;align-items:flex-end">
             <button class="btn btn-green" id="btnAddBet">Add Bet</button>
             <button class="btn btn-secondary btn-sm ml-auto" id="btnClearTracker">Clear All</button>
-            <button class="btn btn-secondary btn-sm" id="btnExportTracker">⬇ CSV</button>
+            <button class="btn btn-secondary btn-sm" id="btnExportTracker">&#x2B07; CSV</button>
           </div>
         </div>
-
         <div class="table-wrap">
           <table id="trackerTable">
             <thead>
@@ -377,48 +367,84 @@
               </tr>
             </thead>
             <tbody id="trackerBody">
-              <tr>
-                <td colspan="8">
-                  <div class="empty-state">
-                    <div class="empty-icon">📋</div>
-                    <div class="empty-title">No bets recorded</div>
-                    <div class="empty-sub">Use "Add Bet" above, or click "Track" on a signal to record it here</div>
-                  </div>
-                </td>
-              </tr>
+              <tr><td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-icon">&#x1F4CB;</div>
+                  <div class="empty-title">No bets recorded</div>
+                  <div class="empty-sub">Use "Add Bet" above, or click "Track" on a signal</div>
+                </div>
+              </td></tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      <div class="alert alert-blue">
-        ℹ️ <span>Bets are stored in memory and <strong>reset when you refresh the page</strong>. A persistent backend is Phase 4 on the roadmap.</span>
+      <div class="alert alert-green">
+        &#x1F4BE; <span>Bets are now <strong>saved to localStorage</strong> and persist across page refreshes. Use CSV export for long-term records.</span>
       </div>
-
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         TAB: DATA / JSON
-    ════════════════════════════════════════════════════ -->
+    <!-- TAB: DATA / JSON -->
     <section class="tab-content" id="tab-data" role="tabpanel">
+
+      <div class="panel" id="liveDataPanel">
+        <div class="panel-header">
+          <div class="panel-title">&#x1F534; Live Data Status</div>
+          <div class="flex gap-2">
+            <button class="btn btn-live btn-sm" id="btnFetchLive2">&#x26A1; Fetch Live Now</button>
+            <button class="btn btn-secondary btn-sm" id="btnTogglePoll2">&#x25B7; Auto-Refresh</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="controls-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+            <div class="stat-info-card">
+              <div class="stat-info-label">Odds API Quota</div>
+              <div class="stat-info-value" id="dataStatQuota">&mdash;</div>
+              <div class="stat-info-sub">requests remaining</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Last Fetch</div>
+              <div class="stat-info-value" id="dataStatLastFetch">&mdash;</div>
+              <div class="stat-info-sub">snapshot age</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Markets Loaded</div>
+              <div class="stat-info-value" id="dataStatMarkets">&mdash;</div>
+              <div class="stat-info-sub">across all sports</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Auto-Refresh</div>
+              <div class="stat-info-value" id="dataStatPolling" style="color:var(--text-muted)">OFF</div>
+              <div class="stat-info-sub">default 72h free-tier cadence</div>
+            </div>
+          </div>
+          <div class="mt-3">
+            <div class="alert alert-blue" style="font-size:12px">
+              &#x1F4E1; <strong>Data Sources:</strong>
+              <strong>The Odds API</strong> (primary, quota-tracked and budgeted in-app) &middot;
+              <strong>OddsBlaze</strong> (supplementary, conservatively throttled in-app) &middot;
+              <strong>TheSportsDB</strong> (metadata, gently rate-limited and cached).
+              Keys are in <code>src/config.js</code>. For shared/deployed use, proxy via Cloudflare Worker.
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="panel">
         <div class="panel-header">
-          <div class="panel-title">📁 Market Snapshot JSON</div>
+          <div class="panel-title">&#x1F4C1; Market Snapshot JSON</div>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" id="btnFormatJson">Format JSON</button>
             <button class="btn btn-secondary btn-sm" id="btnReloadSample2">Load Sample</button>
-            <button class="btn btn-primary btn-sm" id="btnRunFromData">▶ Run Engine</button>
+            <button class="btn btn-primary btn-sm" id="btnRunFromData">&#x25B6; Run Engine</button>
           </div>
         </div>
-
         <div class="snapshot-editor-wrap" style="padding:16px">
           <div>
             <textarea id="snapshotEditor" spellcheck="false" aria-label="Market snapshot JSON editor"></textarea>
           </div>
           <div class="editor-help">
             <div class="editor-help-title">Schema Reference</div>
-
             <div class="schema-field">
               <div class="schema-key">snapshotAt</div>
               <div class="schema-desc">ISO timestamp of when data was captured</div>
@@ -429,15 +455,15 @@
             </div>
             <div class="schema-field">
               <div class="schema-key">market.sport</div>
-              <div class="schema-desc">basketball, soccer, tennis, cricket…</div>
+              <div class="schema-desc">basketball, soccer, tennis, cricket&hellip;</div>
             </div>
             <div class="schema-field">
               <div class="schema-key">market.books[ ]</div>
-              <div class="schema-desc">Must include "Bet365" + ≥ 3 peers</div>
+              <div class="schema-desc">Must include "Bet365" + &ge; 3 peers</div>
             </div>
             <div class="schema-field">
               <div class="schema-key">book.outcomes[ ]</div>
-              <div class="schema-desc">{ name, price } — price in decimal</div>
+              <div class="schema-desc">{ name, price } &mdash; price in decimal</div>
             </div>
             <div class="schema-field">
               <div class="schema-key">market.model</div>
@@ -447,25 +473,20 @@
               <div class="schema-key">market.settlementRules</div>
               <div class="schema-desc">String. Missing = 15% quality penalty</div>
             </div>
-
             <div class="alert alert-amber mt-3">
-              ⚠️ <span>Never paste API keys here. This editor is visible in browser dev tools.</span>
+              &#x26A0;&#xFE0F; <span>Never paste API keys here. Visible in browser dev tools.</span>
             </div>
-
             <div class="mt-3">
               <div class="editor-help-title">Trusted peer books</div>
-              <div class="text-muted mt-3">Pinnacle, Betfair, Matchbook, Circa, DraftKings, FanDuel receive 1.25× weight in consensus probability calculation.</div>
+              <div class="text-muted mt-3">Pinnacle, Betfair, Matchbook, Circa, DraftKings, FanDuel receive 1.25&times; weight in consensus probability.</div>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="alert alert-blue">
-        🔌 <span><strong>Phase 1 goal:</strong> Replace this manual JSON editor with a Cloudflare Worker that fetches live odds from The Odds API and normalizes them into this schema automatically. See <strong>docs/DATA_PROVIDERS.md</strong>.</span>
-      </div>
-
     </section>
 
+    <div id="toastContainer"></div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>

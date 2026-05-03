@@ -1,6 +1,7 @@
 /**
- * Bet365 Edge Brain — App v0.2
+ * Bet365 Edge Brain — App v0.3
  * Tabs: Signals | Calculator | Tracker | Data
+ * Live data wired: The Odds API + OddsBlaze + TheSportsDB
  */
 import { analyzeSnapshot } from "./engine/recommendationEngine.js";
 import {
@@ -11,15 +12,26 @@ import {
   kellyFraction,
   clamp
 } from "./engine/oddsMath.js";
+import * as liveData from "./data/liveDataManager.js";
 
 // ── State ────────────────────────────────────────────────────
 let currentReport   = null;
 let currentSnapshot = null;
-let betLog          = [];        // in-memory bet tracker
+let betLog          = [];        // persisted to localStorage
 let nextBetId       = 1;
 let activeSport     = "all";
 let activeRisk      = "all";
 let sortKey         = "score";
+let isLiveMode      = false;     // true once live data has been loaded
+
+// ── Restore bet tracker from localStorage ────────────────────
+try {
+  const saved = localStorage.getItem("betLog");
+  if (saved) {
+    betLog    = JSON.parse(saved);
+    nextBetId = betLog.length > 0 ? Math.max(...betLog.map((b) => b.id)) + 1 : 1;
+  }
+} catch { /* ignore corrupt storage */ }
 
 // ── DOM refs ─────────────────────────────────────────────────
 const $ = (id) => document.getElementById(id);
@@ -80,13 +92,30 @@ const els = {
   betStatus:     $("betStatus"),
   // data
   snapshotEditor: $("snapshotEditor"),
+  // live
+  btnFetchLive:    $("btnFetchLive"),
+  btnFetchLive2:   $("btnFetchLive2"),
+  btnTogglePoll:   $("btnTogglePoll"),
+  btnTogglePoll2:  $("btnTogglePoll2"),
+  chipQuota:       $("chipQuota"),
+  statQuota:       $("statQuota"),
+  statLiveStatus:  $("statLiveStatus"),
+  chipLiveStatus:  $("chipLiveStatus"),
+  liveStatusBar:   $("liveStatusBar"),
+  liveStatusMsg:   $("liveStatusMsg"),
+  sampleDisclaimer:$("sampleDisclaimer"),
+  dataStatQuota:   $("dataStatQuota"),
+  dataStatLastFetch: $("dataStatLastFetch"),
+  dataStatMarkets:   $("dataStatMarkets"),
+  dataStatPolling:   $("dataStatPolling"),
 };
 
 // ── Boot ─────────────────────────────────────────────────────
 loadSample();
 bindEvents();
 updateCalculator();
-renderTrackerSummary();
+renderTracker();
+updateLiveStatus();
 
 // ── Events ───────────────────────────────────────────────────
 function bindEvents() {
@@ -145,7 +174,7 @@ function bindEvents() {
   // Tracker
   $("btnAddBet").addEventListener("click", addBet);
   $("btnClearTracker").addEventListener("click", () => {
-    if (confirm("Clear all recorded bets?")) { betLog = []; nextBetId = 1; renderTracker(); }
+    if (confirm("Clear all recorded bets?")) { betLog = []; nextBetId = 1; persistBetLog(); renderTracker(); }
   });
   $("btnExportTracker").addEventListener("click", exportTrackerCsv);
 
@@ -156,6 +185,12 @@ function bindEvents() {
       els.snapshotEditor.value = JSON.stringify(parsed, null, 2);
     } catch { /* ignore */ }
   });
+
+  // ── Live data ─────────────────────────────────────────────
+  els.btnFetchLive.addEventListener("click",   fetchAndRunLive);
+  els.btnFetchLive2.addEventListener("click",  fetchAndRunLive);
+  els.btnTogglePoll.addEventListener("click",  togglePolling);
+  els.btnTogglePoll2.addEventListener("click", togglePolling);
 }
 
 // ── Tab switching ────────────────────────────────────────────
@@ -179,6 +214,141 @@ async function loadSample() {
   } catch (err) {
     els.signalsSummary.textContent = `Failed to load sample: ${err.message}`;
   }
+}
+
+// ── Live data fetch ───────────────────────────────────────────
+async function fetchAndRunLive() {
+  const btns = [els.btnFetchLive, els.btnFetchLive2];
+  btns.forEach((b) => { if (b) { b.disabled = true; b.textContent = "Fetching..."; } });
+  showToast("Fetching live odds across all sports...", "info");
+
+  try {
+    const snapshot = await liveData.fetchLiveSnapshot();
+    els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
+    runEngine(snapshot);
+    isLiveMode = true;
+    updateLiveStatus();
+    switchTab("signals");
+
+    const status = liveData.getFullStatus();
+    showToast(
+      `Live data loaded: ${snapshot.markets.length} markets, ${status.quota.remaining ?? "?"} requests left`,
+      "success"
+    );
+  } catch (err) {
+    showToast(`Live fetch failed: ${err.message}`, "error");
+    console.error("[App] fetchAndRunLive:", err);
+    updateLiveStatus();
+  } finally {
+    btns.forEach((b) => {
+      if (b) { b.disabled = false; b.textContent = "Fetch Live"; }
+    });
+  }
+}
+
+function togglePolling() {
+  if (liveData.isPolling()) {
+    liveData.stopPolling();
+    showToast("Auto-refresh stopped", "info");
+  } else {
+    const status = liveData.getFullStatus();
+    liveData.startPolling(
+      (snapshot) => {
+        els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
+        runEngine(snapshot);
+        isLiveMode = true;
+        updateLiveStatus();
+        showToast(`Auto-refreshed: ${snapshot.markets.length} markets`, "info");
+      },
+      undefined,
+      (safety) => {
+        showToast(safety.message, safety.level === "warn" ? "info" : "error");
+      }
+    );
+    showToast(`Auto-refresh started (${status.pollingIntervalLabel})`, "success");
+  }
+  updateLiveStatus();
+}
+
+function updateLiveStatus() {
+  const status = liveData.getFullStatus();
+  const polling = status.isPolling;
+
+  if (els.statQuota) {
+    els.statQuota.textContent = status.quota.remaining !== null
+      ? status.quota.remaining.toLocaleString()
+      : "-";
+  }
+  if (els.chipQuota) {
+    els.chipQuota.className = `stat-chip${status.quota.level === "warn" ? " warn" : status.quota.level === "stop" ? " live-error" : ""}`;
+    els.chipQuota.title = status.quota.remaining === null
+      ? "Odds API quota unknown"
+      : `${status.quota.remaining}/${status.quota.monthly} requests remaining (${status.quota.estFetchesLeft ?? 0} safe fetches left)`;
+  }
+
+  if (polling) {
+    els.statLiveStatus.textContent = "polling";
+    els.chipLiveStatus.className = "stat-chip live-polling";
+  } else if (isLiveMode) {
+    els.statLiveStatus.textContent = status.snapshotAge ?? status.lastFetchAge ?? "loaded";
+    els.chipLiveStatus.className = "stat-chip live-active";
+  } else {
+    els.statLiveStatus.textContent = "off";
+    els.chipLiveStatus.className = "stat-chip live-off";
+  }
+
+  const pollLabel = polling ? "Auto ON" : "Auto";
+  [els.btnTogglePoll, els.btnTogglePoll2].forEach((b) => {
+    if (!b) return;
+    b.textContent = pollLabel;
+    b.classList.toggle("btn-green", polling);
+    b.classList.toggle("btn-secondary", !polling);
+  });
+
+  if (isLiveMode) {
+    if (els.liveStatusBar) { els.liveStatusBar.style.display = ""; }
+    if (els.sampleDisclaimer) { els.sampleDisclaimer.style.display = "none"; }
+    if (els.liveStatusMsg) {
+      els.liveStatusMsg.textContent = liveData.getStatusSummary();
+    }
+  } else {
+    if (els.liveStatusBar) { els.liveStatusBar.style.display = "none"; }
+    if (els.sampleDisclaimer) { els.sampleDisclaimer.style.display = ""; }
+  }
+
+  if (els.dataStatQuota) {
+    els.dataStatQuota.textContent = status.quota.remaining !== null
+      ? status.quota.remaining.toLocaleString()
+      : "-";
+  }
+  if (els.dataStatLastFetch) {
+    els.dataStatLastFetch.textContent = status.snapshotAge ?? status.lastFetchAge ?? "-";
+    els.dataStatLastFetch.title = status.snapshotDisplay ?? status.lastFetchDisplay ?? "No live fetch yet";
+  }
+  if (els.dataStatMarkets) {
+    els.dataStatMarkets.textContent = status.markets ? status.markets.toLocaleString() : "-";
+  }
+  if (els.dataStatPolling) {
+    els.dataStatPolling.textContent = polling ? "ON" : "OFF";
+    els.dataStatPolling.style.color = polling ? "var(--green)" : "var(--text-muted)";
+    els.dataStatPolling.title = `Default cadence: ${status.pollingIntervalLabel}`;
+  }
+}
+
+function showToast(message, type = "info") {
+  const container = $("toastContainer");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  toast.className = `toast toast-${type}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = "0";
+    toast.style.transition = "opacity .3s";
+    setTimeout(() => toast.remove(), 300);
+  }, type === "error" ? 6000 : 3500);
 }
 
 // ── Run engine ───────────────────────────────────────────────
@@ -462,16 +632,18 @@ function addBet() {
   });
 
   els.betDesc.value  = "";
+  persistBetLog();
   renderTracker();
 }
 
 window.updateBetStatus = function(id, status) {
   const bet = betLog.find(b => b.id === id);
-  if (bet) { bet.status = status; renderTracker(); }
+  if (bet) { bet.status = status; persistBetLog(); renderTracker(); }
 };
 
 window.removeBet = function(id) {
   betLog = betLog.filter(b => b.id !== id);
+  persistBetLog();
   renderTracker();
 };
 
@@ -592,6 +764,13 @@ function downloadCsv(rows, filename) {
   URL.revokeObjectURL(url);
 }
 
+// ── localStorage persistence ──────────────────────────────────
+function persistBetLog() {
+  try {
+    localStorage.setItem("betLog", JSON.stringify(betLog));
+  } catch { /* storage full / private mode */ }
+}
+
 // ── Helpers ───────────────────────────────────────────────────
 function pct(v)        { return `${(v * 100).toFixed(1)}%`; }
 function avg(arr)      { return arr.reduce((s,v) => s+v, 0) / arr.length; }
@@ -604,10 +783,11 @@ function esc(v)        {
 
 function sportEmoji(sport) {
   const map = {
-    basketball: "🏀", soccer: "⚽", football: "🏈",
+    basketball: "🏀", soccer: "⚽", americanfootball: "🏈", football: "🏈",
     tennis: "🎾", cricket: "🏏", baseball: "⚾",
-    hockey: "🏒", golf: "⛳", rugby: "🏉", mma: "🥊",
+    icehockey: "🏒", hockey: "🏒", golf: "⛳", rugby: "🏉", mma: "🥊",
     boxing: "🥊", esports: "🎮"
   };
   return map[String(sport).toLowerCase()] ?? "🎯";
 }
+
