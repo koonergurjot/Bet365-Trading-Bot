@@ -3,8 +3,14 @@ import {
   decimalToImpliedProbability,
   expectedValue,
   kellyFraction,
-  removeVig,
 } from "./oddsMath.js";
+import {
+  buildWeightedConsensus,
+  collectComparableOutcomes,
+  describeMarketShape,
+  normalizeBookName,
+  normalizeOutcomeDescriptor,
+} from "./marketNormalizer.js";
 
 const DEFAULT_CONFIG = {
   bankroll: 1000,
@@ -13,7 +19,7 @@ const DEFAULT_CONFIG = {
   maxBankrollStake: 0.02,
   fractionalKelly: 0.25,
   staleMinutes: 8,
-  trustedBooks: ["pinnacle", "betfair", "matchbook", "circa", "draftkings", "fanduel"],
+  dynamicThresholds: true,
 };
 
 export function analyzeSnapshot(snapshot, config = {}) {
@@ -44,7 +50,7 @@ export function analyzeMarket(market, settings = DEFAULT_CONFIG) {
 }
 
 function evaluateMarket(market, settings) {
-  const bet365Book = market.books.find((book) => normalizeBook(book.name) === "bet365");
+  const bet365Book = (market.books ?? []).find((book) => normalizeBookName(book.name) === "bet365");
   if (!bet365Book) {
     return [{
       accepted: false,
@@ -58,22 +64,41 @@ function evaluateMarket(market, settings) {
   }
 
   return bet365Book.outcomes.map((bet365Outcome) => {
-    const peerOutcomes = collectPeerOutcomes(market, bet365Outcome.name, settings);
-    const consensus = buildConsensus(peerOutcomes, settings);
-    const modelProbability = chooseModelProbability(market, bet365Outcome.name, consensus.noVigProbability);
+    const descriptor = normalizeOutcomeDescriptor(market, bet365Outcome);
+    const peerOutcomes = collectPeerOutcomes(market, bet365Outcome, settings);
+    const consensus = buildConsensus(peerOutcomes, market);
+    const modelProbability = chooseModelProbability(market, descriptor, consensus.noVigProbability);
     const ev = expectedValue(modelProbability, bet365Outcome.price);
     const rawKelly = kellyFraction(modelProbability, bet365Outcome.price);
+    const history = market.historyModel?.positions?.[descriptor.selectionKey] ?? null;
+    const marketShape = describeMarketShape(market, bet365Outcome, peerOutcomes);
+    const dataQuality = scoreDataQuality(market, peerOutcomes, settings, history, marketShape);
+    const confidence = scoreConfidence(market, dataQuality, consensus, history);
+    const thresholds = buildDynamicThresholds({
+      market,
+      settings,
+      peerOutcomes,
+      descriptor,
+      history,
+      marketShape,
+    });
     const stakeFraction = clamp(rawKelly * settings.fractionalKelly, 0, settings.maxBankrollStake);
-    const dataQuality = scoreDataQuality(market, peerOutcomes, settings);
-    const confidence = clamp((dataQuality + Number(market.model?.confidence ?? 0.5)) / 2, 0, 1);
-    const risk = scoreRisk({ ev, stakeFraction, confidence, dataQuality, price: bet365Outcome.price });
-    const notes = buildNotes(market, peerOutcomes, confidence, dataQuality);
+    const risk = scoreRisk({
+      ev,
+      stakeFraction,
+      confidence,
+      dataQuality,
+      price: bet365Outcome.price,
+      history,
+    });
+    const notes = buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape);
     const reasonCodes = buildReasonCodes({
       market,
       peerOutcomes,
       expectedValue: ev,
       confidence,
-      settings,
+      thresholds,
+      history,
     });
 
     return {
@@ -85,12 +110,14 @@ function evaluateMarket(market, settings) {
       reasonCodes,
       warningCodes: notes.map(noteToReasonCode),
       recommendation: {
-        id: `${market.id}:${bet365Outcome.name}`,
+        id: `${market.id}:${descriptor.selectionKey}`,
+        marketId: market.id,
         sport: market.sport,
         league: market.league,
         event: market.event,
         marketType: market.marketType,
         selection: bet365Outcome.name,
+        ...(descriptor.point !== null ? { line: descriptor.point } : {}),
         commenceTime: market.commenceTime,
         bet365Decimal: bet365Outcome.price,
         bet365American: bet365Outcome.american ?? null,
@@ -105,9 +132,12 @@ function evaluateMarket(market, settings) {
         confidence,
         dataQuality,
         risk,
-        score: ev * 100 + confidence * 10 - risk.penalty,
-        peerBookCount: peerOutcomes.length,
-        staleBookCount: peerOutcomes.filter((outcome) => outcome.isStale).length,
+        thresholds,
+        history,
+        marketShape,
+        score: buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk }),
+        peerBookCount: new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size,
+        staleBookCount: new Set(peerOutcomes.filter((outcome) => outcome.isStale).map((outcome) => outcome.normalizedBook)).size,
         modelSource: market.model?.version ?? "consensus-fallback",
         notes,
       },
@@ -115,93 +145,216 @@ function evaluateMarket(market, settings) {
   });
 }
 
-function collectPeerOutcomes(market, selectionName, settings) {
-  return market.books
-    .filter((book) => normalizeBook(book.name) !== "bet365")
-    .flatMap((book) => {
-      const noVigMarket = removeVig(book.outcomes);
-      return noVigMarket
-        .filter((outcome) => outcome.name === selectionName)
-        .map((outcome) => ({
-          ...outcome,
-          book: book.name,
-          normalizedBook: normalizeBook(book.name),
-          updatedAt: book.updatedAt,
-          isStale: isOlderThan(book.updatedAt, market.snapshotAt, settings.staleMinutes),
-        }));
-    });
+function collectPeerOutcomes(market, targetOutcome, settings) {
+  return collectComparableOutcomes(market, targetOutcome, {
+    sourceBook: "bet365",
+    staleMinutes: settings.staleMinutes,
+  });
 }
 
-function buildConsensus(peerOutcomes, settings) {
-  if (peerOutcomes.length === 0) {
-    return {
-      noVigProbability: 0.5,
-      fairDecimal: 2,
-      overround: 0,
-    };
-  }
-
-  const weightedProbabilities = peerOutcomes.map((outcome) => ({
-    probability: outcome.noVigProbability,
-    weight: settings.trustedBooks.includes(outcome.normalizedBook) ? 1.25 : 1,
-  }));
-
-  const noVigProbability = weightedProbabilities.reduce((sum, outcome) => (
-    sum + outcome.probability * outcome.weight
-  ), 0) / weightedProbabilities.reduce((sum, outcome) => sum + outcome.weight, 0);
-
-  return {
-    noVigProbability,
-    fairDecimal: 1 / clamp(noVigProbability, 0.001, 0.999),
-    overround: null,
-  };
+function buildConsensus(peerOutcomes, market) {
+  return buildWeightedConsensus(peerOutcomes, {
+    snapshotAt: market.snapshotAt,
+  });
 }
 
-function chooseModelProbability(market, selectionName, consensusProbability) {
-  const modelPick = market.model?.probabilities?.find((entry) => entry.name === selectionName);
+function chooseModelProbability(market, descriptor, consensusProbability) {
+  const modelPick = market.model?.probabilities?.find((entry) => {
+    if (entry.canonicalKey && entry.canonicalKey === descriptor.selectionKey) {
+      return true;
+    }
+
+    if (descriptor.point != null && Number(entry.line) === descriptor.point) {
+      const candidateDescriptor = normalizeOutcomeDescriptor(market, entry);
+      return candidateDescriptor.groupKey === descriptor.groupKey;
+    }
+
+    return entry.name === descriptor.name;
+  });
+
   if (modelPick && Number.isFinite(modelPick.probability)) {
     return clamp(modelPick.probability, 0.001, 0.999);
   }
   return clamp(consensusProbability, 0.001, 0.999);
 }
 
-function scoreDataQuality(market, peerOutcomes, settings) {
-  const bookDepth = clamp(peerOutcomes.length / 6, 0, 1);
+function scoreDataQuality(market, peerOutcomes, settings, history, marketShape) {
+  const bookDepth = clamp(new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size / 6, 0, 1);
   const freshness = 1 - clamp(peerOutcomes.filter((outcome) => outcome.isStale).length / Math.max(peerOutcomes.length, 1), 0, 1);
   const modelFreshness = isOlderThan(market.snapshotAt, new Date().toISOString(), settings.staleMinutes) ? 0.45 : 1;
   const settlementRisk = market.settlementRules ? 1 : 0.7;
-  return clamp(bookDepth * 0.35 + freshness * 0.3 + modelFreshness * 0.2 + settlementRisk * 0.15, 0, 1);
+  const lineQuality = marketShape.usedLineNormalization
+    ? clamp(1 - marketShape.averageLineDistance / 4, 0.55, 1)
+    : 1;
+  const historyCoverage = history ? clamp(history.sampleCount / 6, 0.25, 1) : 0.5;
+
+  return clamp(
+    bookDepth * 0.28
+      + freshness * 0.24
+      + modelFreshness * 0.16
+      + settlementRisk * 0.14
+      + lineQuality * 0.1
+      + historyCoverage * 0.08,
+    0,
+    1
+  );
 }
 
-function scoreRisk({ ev, stakeFraction, confidence, dataQuality, price }) {
+function scoreConfidence(market, dataQuality, consensus, history) {
+  const modelConfidence = Number(market.model?.confidence ?? 0.5);
+  const agreementScore = clamp(Number(consensus.agreementScore ?? 0.9) - 0.75, 0, 0.4);
+  const historyAdjustment = history
+    ? (history.isLagging ? 0.06 : 0) - (history.isSnappingBack ? 0.06 : 0) + Math.min(history.persistenceSamples / 20, 0.08)
+    : 0;
+
+  return clamp(
+    modelConfidence * 0.46
+      + dataQuality * 0.38
+      + agreementScore * 0.18
+      + historyAdjustment,
+    0,
+    1
+  );
+}
+
+function buildDynamicThresholds({ market, settings, peerOutcomes, history, marketShape }) {
+  const dynamic = settings.dynamicThresholds !== false;
+  const baseEv = Number(settings.minExpectedValue ?? DEFAULT_CONFIG.minExpectedValue);
+  const baseConfidence = Number(settings.minConfidence ?? DEFAULT_CONFIG.minConfidence);
+
+  if (!dynamic) {
+    return {
+      minExpectedValue: baseEv,
+      minConfidence: baseConfidence,
+      rationale: ["dynamic thresholds disabled"],
+    };
+  }
+
+  const peerCount = new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size;
+  const staleShare = clamp(peerOutcomes.filter((outcome) => outcome.isStale).length / Math.max(peerOutcomes.length, 1), 0, 1);
+  const hoursToStart = getHoursToStart(market.commenceTime, market.snapshotAt);
+  const rationale = [];
+  let minExpectedValue = baseEv;
+  let minConfidence = baseConfidence;
+
+  if (peerCount >= 5) {
+    minExpectedValue -= 0.008;
+    minConfidence -= 0.045;
+    rationale.push("deep peer market");
+  } else if (peerCount <= 1) {
+    minExpectedValue += 0.02;
+    minConfidence += 0.12;
+    rationale.push("thin peer market");
+  } else if (peerCount <= 3) {
+    minExpectedValue += 0.006;
+    minConfidence += 0.04;
+    rationale.push("moderate peer depth");
+  }
+
+  if (staleShare >= 0.5) {
+    minExpectedValue += 0.008;
+    minConfidence += 0.05;
+    rationale.push("stale peer quotes");
+  } else if (staleShare <= 0.15) {
+    minExpectedValue -= 0.004;
+    minConfidence -= 0.02;
+    rationale.push("fresh peer quotes");
+  }
+
+  if (String(market.model?.version ?? "").includes("weighted-consensus")) {
+    minExpectedValue -= 0.003;
+    minConfidence -= 0.015;
+    rationale.push("weighted baseline model");
+  } else if (!market.model) {
+    minExpectedValue += 0.01;
+    minConfidence += 0.06;
+    rationale.push("consensus fallback only");
+  }
+
+  if (marketShape.usedLineNormalization) {
+    minExpectedValue -= 0.003;
+    rationale.push("equivalent line matching");
+  } else if ((market.marketType === "spread" || market.marketType === "totals") && !marketShape.usedLineNormalization) {
+    minConfidence += 0.03;
+    rationale.push("line market without line support");
+  }
+
+  if (hoursToStart !== null && hoursToStart < 1.5) {
+    minExpectedValue += 0.012;
+    minConfidence += 0.06;
+    rationale.push("event starting soon");
+  } else if (hoursToStart !== null && hoursToStart < 6) {
+    minExpectedValue += 0.006;
+    minConfidence += 0.03;
+    rationale.push("near-start market");
+  } else if (hoursToStart !== null && hoursToStart > 24) {
+    minExpectedValue -= 0.002;
+    rationale.push("early market window");
+  }
+
+  if (history?.isLagging && history.persistenceMinutes >= 15) {
+    minExpectedValue -= 0.004;
+    minConfidence -= 0.015;
+    rationale.push("persistent lag signal");
+  }
+
+  if (history?.isSnappingBack) {
+    minExpectedValue += 0.01;
+    minConfidence += 0.045;
+    rationale.push("snap-back risk");
+  }
+
+  return {
+    minExpectedValue: clamp(Number(minExpectedValue.toFixed(4)), 0.012, 0.065),
+    minConfidence: clamp(Number(minConfidence.toFixed(4)), 0.48, 0.82),
+    rationale,
+  };
+}
+
+function scoreRisk({ ev, stakeFraction, confidence, dataQuality, price, history }) {
   const longshotPenalty = price >= 5 ? 2 : price >= 3.5 ? 1 : 0;
   const confidencePenalty = confidence < 0.7 ? 2 : confidence < 0.82 ? 1 : 0;
   const qualityPenalty = dataQuality < 0.65 ? 2 : dataQuality < 0.8 ? 1 : 0;
   const stakePenalty = stakeFraction > 0.015 ? 1 : 0;
   const evPenalty = ev < 0.05 ? 1 : 0;
-  const penalty = longshotPenalty + confidencePenalty + qualityPenalty + stakePenalty + evPenalty;
+  const historyPenalty = history?.isSnappingBack ? 2 : 0;
+  const penalty = longshotPenalty + confidencePenalty + qualityPenalty + stakePenalty + evPenalty + historyPenalty;
   const label = penalty <= 2 ? "Low" : penalty <= 4 ? "Medium" : "High";
   return { label, penalty };
 }
 
-function buildNotes(market, peerOutcomes, confidence, dataQuality) {
+function buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape) {
   const notes = [];
-  if (peerOutcomes.length < 4) notes.push("thin market");
+  if (new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size < 4) notes.push("thin market");
   if (peerOutcomes.some((outcome) => outcome.isStale)) notes.push("stale peer quote");
+  if (marketShape.usedLineNormalization) notes.push("line-normalized consensus");
   if (!market.settlementRules) notes.push("missing settlement rules");
   if (!market.model) notes.push("consensus fallback");
   if (confidence < 0.7) notes.push("model confidence below target");
   if (dataQuality < 0.7) notes.push("data quality review needed");
+  if (history?.isLagging) notes.push("bet365 lagging market");
+  if (history?.persistenceSamples >= 3) notes.push("persistent edge");
+  if (history?.isSnappingBack) notes.push("market snapping back");
   return notes;
 }
 
-function buildReasonCodes({ market, peerOutcomes, expectedValue: ev, confidence, settings }) {
+function buildReasonCodes({ market, peerOutcomes, expectedValue: ev, confidence, thresholds, history }) {
   const reasonCodes = [];
   if (!market.model && peerOutcomes.length < 2) reasonCodes.push("no_reliable_model");
   if (peerOutcomes.length === 0) reasonCodes.push("no_peer_prices");
-  if (ev < settings.minExpectedValue) reasonCodes.push("ev_below_threshold");
-  if (confidence < settings.minConfidence) reasonCodes.push("confidence_below_threshold");
+  if (ev < thresholds.minExpectedValue) reasonCodes.push("ev_below_threshold");
+  if (confidence < thresholds.minConfidence) reasonCodes.push("confidence_below_threshold");
+  if (history?.isSnappingBack && ev < thresholds.minExpectedValue + 0.012) reasonCodes.push("snapback_risk");
   return reasonCodes;
+}
+
+function buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk }) {
+  const lagBoost = history?.isLagging ? 3 : 0;
+  const persistenceBoost = Math.min((history?.persistenceMinutes ?? 0) / 20, 3);
+  const lineBoost = marketShape.usedLineNormalization ? 1.5 : 0;
+  const snapbackPenalty = history?.isSnappingBack ? 4 : 0;
+
+  return ev * 100 + confidence * 10 + dataQuality * 6 + lagBoost + persistenceBoost + lineBoost - risk.penalty - snapbackPenalty;
 }
 
 function buildDiagnostics(markets, evaluations) {
@@ -240,13 +393,19 @@ function validateSnapshot(snapshot) {
   }
 }
 
-function normalizeBook(bookName) {
-  return String(bookName).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
 function isOlderThan(timestamp, referenceTimestamp, minutes) {
   const then = Date.parse(timestamp);
   const reference = Date.parse(referenceTimestamp);
   if (!Number.isFinite(then) || !Number.isFinite(reference)) return true;
   return reference - then > minutes * 60 * 1000;
+}
+
+function getHoursToStart(commenceTime, snapshotAt) {
+  const start = Date.parse(commenceTime);
+  const reference = Date.parse(snapshotAt ?? new Date().toISOString());
+  if (!Number.isFinite(start) || !Number.isFinite(reference)) {
+    return null;
+  }
+
+  return (start - reference) / 3600000;
 }

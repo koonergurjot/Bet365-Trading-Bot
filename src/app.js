@@ -415,6 +415,7 @@ function readEngineConfig() {
     minConfidence:    0.55,
     maxBankrollStake: 0.02,
     fractionalKelly:  0.25,
+    dynamicThresholds: true,
   };
 }
 

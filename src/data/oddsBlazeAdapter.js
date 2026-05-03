@@ -15,6 +15,7 @@
 
 import { API_CONFIG } from "../config.js";
 import { americanToDecimal } from "../engine/oddsMath.js";
+import { canonicalizeTeamName, canonicalizeText } from "../engine/marketNormalizer.js";
 
 const BASE = API_CONFIG.oddsBlaze.baseUrl;
 const KEY  = API_CONFIG.oddsBlaze.key;
@@ -246,7 +247,14 @@ function buildEventKey(sport, eventName, commenceTime) {
 }
 
 function normalizeEventName(name) {
-  return String(name).toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+  const normalized = canonicalizeText(name);
+  if (normalized.includes(" vs ")) {
+    return normalized
+      .split(" vs ")
+      .map((part) => canonicalizeTeamName(part))
+      .join(" vs ");
+  }
+  return canonicalizeTeamName(normalized);
 }
 
 function toTitleCase(str) {

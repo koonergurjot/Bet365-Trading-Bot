@@ -11,10 +11,23 @@ import {
 } from "./oddsApiAdapter.js";
 import { fetchSupplementaryBooks, mergeIntoSnapshot } from "./oddsBlazeAdapter.js";
 import { prewarmTeamCache } from "./sportsDbAdapter.js";
-import { clamp, removeVig } from "../engine/oddsMath.js";
+import { clamp } from "../engine/oddsMath.js";
+import {
+  buildWeightedConsensus,
+  collectComparableOutcomes,
+  describeMarketShape,
+  normalizeBookName,
+  normalizeOutcomeDescriptor,
+} from "../engine/marketNormalizer.js";
+import {
+  annotateSnapshotWithHistory,
+  createMarketHistoryStore,
+  ingestSnapshotHistory,
+} from "../engine/marketHistory.js";
 import { POLL_CONFIG, API_CONFIG, QUOTA } from "../config.js";
 
 const SNAPSHOT_CACHE_KEY = "bet365EdgeBrain:lastSnapshot";
+const MARKET_HISTORY_CACHE_KEY = "bet365EdgeBrain:marketHistory";
 const BASELINE_STALE_MINUTES = 12;
 
 let pollingTimer = null;
@@ -25,6 +38,7 @@ let errorCount = 0;
 let useOddsBlaze = true;
 let oddsBlazeErrors = 0;
 let snapshotSource = "idle";
+let marketHistoryStore = createMarketHistoryStore();
 
 export async function fetchLiveSnapshot({
   maxSports = POLL_CONFIG.maxSports,
@@ -71,7 +85,10 @@ export async function fetchLiveSnapshot({
     }
   }
 
-  applyBaselineModels(snapshot);
+  hydrateHistoryStore();
+  applyBaselineModels(snapshot, marketHistoryStore);
+  marketHistoryStore = ingestSnapshotHistory(snapshot, marketHistoryStore);
+  annotateSnapshotWithHistory(snapshot, marketHistoryStore);
 
   if (withSportsDb && snapshot.markets.length > 0) {
     prewarmTeamCache(snapshot.markets).catch((err) => {
@@ -85,6 +102,7 @@ export async function fetchLiveSnapshot({
   fetchCount++;
   snapshotSource = "live";
   persistSnapshotCache(snapshot);
+  persistMarketHistoryCache(marketHistoryStore);
 
   console.log(
     `[LiveData] Ready - ${snapshot.markets.length} markets, ` +
@@ -101,8 +119,13 @@ export function restoreCachedSnapshot() {
     return null;
   }
 
+  hydrateHistoryStore();
   lastSnapshot = cached.snapshot;
   lastFetchAt = cached.cachedAt ? new Date(cached.cachedAt) : new Date(cached.snapshot.snapshotAt ?? Date.now());
+  if (!Object.keys(marketHistoryStore.markets ?? {}).length) {
+    marketHistoryStore = ingestSnapshotHistory(lastSnapshot, marketHistoryStore);
+  }
+  annotateSnapshotWithHistory(lastSnapshot, marketHistoryStore);
   snapshotSource = "cache";
   return lastSnapshot;
 }
@@ -217,6 +240,7 @@ export function getFullStatus() {
     oddsBlazeEnabled: useOddsBlaze,
     pollingIntervalHrs: POLL_CONFIG.defaultIntervalMs / 3600000,
     pollingIntervalLabel: formatPollingInterval(POLL_CONFIG.defaultIntervalMs),
+    historyMarkets: Object.keys(marketHistoryStore.markets ?? {}).length,
   };
 }
 
@@ -226,58 +250,61 @@ export function resetOddsBlaze() {
   console.log("[LiveData] OddsBlaze re-enabled");
 }
 
-function applyBaselineModels(snapshot) {
+function applyBaselineModels(snapshot, historyStore) {
   for (const market of snapshot.markets ?? []) {
-    if (market.model?.probabilities?.length) {
+    if (market.model?.probabilities?.length && !shouldReplaceBaselineModel(market.model)) {
       continue;
     }
 
-    const peerBooks = (market.books ?? []).filter((book) => normalizeBook(book.name) !== "bet365");
-    const probabilityByName = new Map();
-    let validPeerBooks = 0;
-    let stalePeerBooks = 0;
-
-    for (const book of peerBooks) {
-      try {
-        const noVigOutcomes = removeVig(book.outcomes ?? []);
-        validPeerBooks++;
-        if (isOlderThan(book.updatedAt, market.snapshotAt, BASELINE_STALE_MINUTES)) {
-          stalePeerBooks++;
-        }
-
-        for (const outcome of noVigOutcomes) {
-          const current = probabilityByName.get(outcome.name) ?? { sum: 0, count: 0 };
-          current.sum += outcome.noVigProbability;
-          current.count += 1;
-          probabilityByName.set(outcome.name, current);
-        }
-      } catch {
-        // Skip malformed or incomplete books.
-      }
-    }
-
-    if (validPeerBooks === 0 || probabilityByName.size === 0) {
+    const referenceBook = (market.books ?? []).find((book) => normalizeBookName(book.name) === "bet365")
+      ?? market.books?.[0];
+    if (!referenceBook?.outcomes?.length) {
       continue;
     }
 
     const normalizedProbabilities = [];
-    const preferredOrder = market.books?.find((book) => normalizeBook(book.name) === "bet365")?.outcomes ?? [];
+    const booksSeen = new Set();
+    let stalePeerBooks = 0;
+    let lineEquivalentCount = 0;
+    let weightedFreshness = 0;
+    let weightedAgreement = 0;
+    let weightSum = 0;
 
-    for (const outcome of preferredOrder) {
-      const stats = probabilityByName.get(outcome.name);
-      if (!stats) continue;
+    for (const outcome of referenceBook.outcomes) {
+      const comparableOutcomes = collectComparableOutcomes(market, outcome, {
+        sourceBook: referenceBook.name,
+        staleMinutes: BASELINE_STALE_MINUTES,
+      });
+      if (!comparableOutcomes.length) {
+        continue;
+      }
+
+      const consensus = buildWeightedConsensus(comparableOutcomes, {
+        snapshotAt: market.snapshotAt,
+        agreementHistory: historyStore?.bookStats ?? {},
+      });
+      const descriptor = normalizeOutcomeDescriptor(market, outcome);
+      const shape = describeMarketShape(market, outcome, comparableOutcomes);
+
       normalizedProbabilities.push({
         name: outcome.name,
-        probability: stats.sum / stats.count,
+        canonicalKey: descriptor.selectionKey,
+        ...(descriptor.point !== null ? { line: descriptor.point } : {}),
+        probability: consensus.noVigProbability,
       });
-    }
 
-    for (const [name, stats] of probabilityByName.entries()) {
-      if (normalizedProbabilities.some((entry) => entry.name === name)) continue;
-      normalizedProbabilities.push({
-        name,
-        probability: stats.sum / stats.count,
-      });
+      for (const comparable of comparableOutcomes) {
+        booksSeen.add(comparable.normalizedBook);
+        if (comparable.isStale) {
+          stalePeerBooks += 1;
+        }
+      }
+      if (shape.usedLineNormalization) {
+        lineEquivalentCount += shape.equivalentLineCount;
+      }
+      weightedFreshness += consensus.freshnessScore * consensus.weightSum;
+      weightedAgreement += consensus.agreementScore * consensus.weightSum;
+      weightSum += consensus.weightSum;
     }
 
     const totalProbability = normalizedProbabilities.reduce((sum, entry) => sum + entry.probability, 0);
@@ -285,20 +312,37 @@ function applyBaselineModels(snapshot) {
       continue;
     }
 
-    const freshness = 1 - (stalePeerBooks / Math.max(validPeerBooks, 1));
+    const validPeerBooks = booksSeen.size;
+    const freshness = 1 - clamp(stalePeerBooks / Math.max(validPeerBooks, 1), 0, 1);
+    const agreement = weightSum > 0 ? weightedAgreement / weightSum : 0.92;
+    const shapeBonus = lineEquivalentCount > 0 ? 0.04 : 0;
     const confidence = clamp(
-      0.42 + Math.min(validPeerBooks, 5) * 0.08 + freshness * 0.15 + (market.settlementRules ? 0.05 : 0),
+      0.4
+        + Math.min(validPeerBooks, 6) * 0.06
+        + freshness * 0.14
+        + clamp(agreement - 0.75, 0, 0.3) * 0.35
+        + shapeBonus
+        + (market.settlementRules ? 0.05 : 0),
       0.45,
-      0.9
+      0.92
     );
 
     market.model = {
-      version: "baseline-peer-consensus-v1",
+      version: "baseline-weighted-consensus-v2",
       confidence: Number(confidence.toFixed(3)),
       probabilities: normalizedProbabilities.map((entry) => ({
         name: entry.name,
+        ...(entry.canonicalKey ? { canonicalKey: entry.canonicalKey } : {}),
+        ...(entry.line != null ? { line: entry.line } : {}),
         probability: Number((entry.probability / totalProbability).toFixed(6)),
       })),
+      meta: {
+        peerBooks: validPeerBooks,
+        stalePeerBooks,
+        usedLineNormalization: lineEquivalentCount > 0,
+        agreementScore: Number(agreement.toFixed(3)),
+        freshnessScore: Number((weightSum > 0 ? weightedFreshness / weightSum : freshness).toFixed(3)),
+      },
     };
   }
 }
@@ -329,6 +373,41 @@ function readSnapshotCache() {
   }
 }
 
+function persistMarketHistoryCache(historyStore) {
+  const storage = getStorage();
+  if (!storage || !historyStore) return;
+
+  try {
+    storage.setItem(MARKET_HISTORY_CACHE_KEY, JSON.stringify({
+      cachedAt: new Date().toISOString(),
+      history: historyStore,
+    }));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function readMarketHistoryCache() {
+  const storage = getStorage();
+  if (!storage) return null;
+
+  try {
+    const raw = storage.getItem(MARKET_HISTORY_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed?.history ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function hydrateHistoryStore() {
+  if (Object.keys(marketHistoryStore.markets ?? {}).length > 0) {
+    return;
+  }
+
+  marketHistoryStore = createMarketHistoryStore(readMarketHistoryCache());
+}
+
 function buildStatusSummary(status) {
   if (!status.lastFetchAt) {
     return `Live data idle. Default auto-refresh is ${status.pollingIntervalLabel} to stay inside free-tier limits.`;
@@ -355,15 +434,8 @@ function getStorage() {
   }
 }
 
-function normalizeBook(name) {
-  return String(name).toLowerCase().replace(/[^a-z0-9]/g, "");
-}
-
-function isOlderThan(timestamp, referenceTimestamp, minutes) {
-  const then = Date.parse(timestamp);
-  const reference = Date.parse(referenceTimestamp);
-  if (!Number.isFinite(then) || !Number.isFinite(reference)) return true;
-  return reference - then > minutes * 60 * 1000;
+function shouldReplaceBaselineModel(model) {
+  return !model?.version || String(model.version).startsWith("baseline-");
 }
 
 function formatRelativeAge(ageMs) {
