@@ -3,7 +3,7 @@ import {
   decimalToImpliedProbability,
   expectedValue,
   kellyFraction,
-  removeVig
+  removeVig,
 } from "./oddsMath.js";
 
 const DEFAULT_CONFIG = {
@@ -13,17 +13,17 @@ const DEFAULT_CONFIG = {
   maxBankrollStake: 0.02,
   fractionalKelly: 0.25,
   staleMinutes: 8,
-  trustedBooks: ["pinnacle", "betfair", "matchbook", "circa", "draftkings", "fanduel"]
+  trustedBooks: ["pinnacle", "betfair", "matchbook", "circa", "draftkings", "fanduel"],
 };
 
 export function analyzeSnapshot(snapshot, config = {}) {
   const settings = { ...DEFAULT_CONFIG, ...config };
   validateSnapshot(snapshot);
 
-  const recommendations = snapshot.markets.flatMap((market) => analyzeMarket(market, settings));
-  const filtered = recommendations
-    .filter((rec) => rec.expectedValue >= settings.minExpectedValue)
-    .filter((rec) => rec.confidence >= settings.minConfidence)
+  const evaluations = snapshot.markets.flatMap((market) => evaluateMarket(market, settings));
+  const recommendations = evaluations
+    .filter((entry) => entry.accepted && entry.recommendation)
+    .map((entry) => entry.recommendation)
     .sort((a, b) => b.score - a.score);
 
   return {
@@ -31,15 +31,30 @@ export function analyzeSnapshot(snapshot, config = {}) {
     sourceSnapshotAt: snapshot.snapshotAt,
     settings,
     totalMarkets: snapshot.markets.length,
-    totalCandidates: recommendations.length,
-    recommendations: filtered
+    totalCandidates: evaluations.filter((entry) => entry.recommendation).length,
+    recommendations,
+    diagnostics: buildDiagnostics(snapshot.markets, evaluations),
   };
 }
 
 export function analyzeMarket(market, settings = DEFAULT_CONFIG) {
+  return evaluateMarket(market, settings)
+    .filter((entry) => entry.recommendation)
+    .map((entry) => entry.recommendation);
+}
+
+function evaluateMarket(market, settings) {
   const bet365Book = market.books.find((book) => normalizeBook(book.name) === "bet365");
   if (!bet365Book) {
-    return [];
+    return [{
+      accepted: false,
+      recommendation: null,
+      marketId: market.id,
+      sport: market.sport,
+      event: market.event,
+      reasonCodes: ["missing_bet365"],
+      warningCodes: [],
+    }];
   }
 
   return bet365Book.outcomes.map((bet365Outcome) => {
@@ -52,32 +67,50 @@ export function analyzeMarket(market, settings = DEFAULT_CONFIG) {
     const dataQuality = scoreDataQuality(market, peerOutcomes, settings);
     const confidence = clamp((dataQuality + Number(market.model?.confidence ?? 0.5)) / 2, 0, 1);
     const risk = scoreRisk({ ev, stakeFraction, confidence, dataQuality, price: bet365Outcome.price });
+    const notes = buildNotes(market, peerOutcomes, confidence, dataQuality);
+    const reasonCodes = buildReasonCodes({
+      market,
+      peerOutcomes,
+      expectedValue: ev,
+      confidence,
+      settings,
+    });
 
     return {
-      id: `${market.id}:${bet365Outcome.name}`,
+      accepted: reasonCodes.length === 0,
+      marketId: market.id,
       sport: market.sport,
-      league: market.league,
       event: market.event,
-      marketType: market.marketType,
       selection: bet365Outcome.name,
-      commenceTime: market.commenceTime,
-      bet365Decimal: bet365Outcome.price,
-      bet365American: bet365Outcome.american ?? null,
-      bet365ImpliedProbability: decimalToImpliedProbability(bet365Outcome.price),
-      consensusProbability: consensus.noVigProbability,
-      fairDecimal: consensus.fairDecimal,
-      modelProbability,
-      expectedValue: ev,
-      kellyFraction: rawKelly,
-      stakeFraction,
-      stakeAmount: Number((settings.bankroll * stakeFraction).toFixed(2)),
-      confidence,
-      dataQuality,
-      risk,
-      score: ev * 100 + confidence * 10 - risk.penalty,
-      peerBookCount: peerOutcomes.length,
-      staleBookCount: peerOutcomes.filter((outcome) => outcome.isStale).length,
-      notes: buildNotes(market, peerOutcomes, confidence, dataQuality)
+      reasonCodes,
+      warningCodes: notes.map(noteToReasonCode),
+      recommendation: {
+        id: `${market.id}:${bet365Outcome.name}`,
+        sport: market.sport,
+        league: market.league,
+        event: market.event,
+        marketType: market.marketType,
+        selection: bet365Outcome.name,
+        commenceTime: market.commenceTime,
+        bet365Decimal: bet365Outcome.price,
+        bet365American: bet365Outcome.american ?? null,
+        bet365ImpliedProbability: decimalToImpliedProbability(bet365Outcome.price),
+        consensusProbability: consensus.noVigProbability,
+        fairDecimal: consensus.fairDecimal,
+        modelProbability,
+        expectedValue: ev,
+        kellyFraction: rawKelly,
+        stakeFraction,
+        stakeAmount: Number((settings.bankroll * stakeFraction).toFixed(2)),
+        confidence,
+        dataQuality,
+        risk,
+        score: ev * 100 + confidence * 10 - risk.penalty,
+        peerBookCount: peerOutcomes.length,
+        staleBookCount: peerOutcomes.filter((outcome) => outcome.isStale).length,
+        modelSource: market.model?.version ?? "consensus-fallback",
+        notes,
+      },
     };
   });
 }
@@ -90,27 +123,27 @@ function collectPeerOutcomes(market, selectionName, settings) {
       return noVigMarket
         .filter((outcome) => outcome.name === selectionName)
         .map((outcome) => ({
-        ...outcome,
-        book: book.name,
-        normalizedBook: normalizeBook(book.name),
-        updatedAt: book.updatedAt,
-        isStale: isOlderThan(book.updatedAt, market.snapshotAt, settings.staleMinutes)
-      }));
+          ...outcome,
+          book: book.name,
+          normalizedBook: normalizeBook(book.name),
+          updatedAt: book.updatedAt,
+          isStale: isOlderThan(book.updatedAt, market.snapshotAt, settings.staleMinutes),
+        }));
     });
 }
 
 function buildConsensus(peerOutcomes, settings) {
   if (peerOutcomes.length === 0) {
     return {
-      noVigProbability: 0,
-      fairDecimal: Infinity,
-      overround: 0
+      noVigProbability: 0.5,
+      fairDecimal: 2,
+      overround: 0,
     };
   }
 
   const weightedProbabilities = peerOutcomes.map((outcome) => ({
     probability: outcome.noVigProbability,
-    weight: settings.trustedBooks.includes(outcome.normalizedBook) ? 1.25 : 1
+    weight: settings.trustedBooks.includes(outcome.normalizedBook) ? 1.25 : 1,
   }));
 
   const noVigProbability = weightedProbabilities.reduce((sum, outcome) => (
@@ -120,7 +153,7 @@ function buildConsensus(peerOutcomes, settings) {
   return {
     noVigProbability,
     fairDecimal: 1 / clamp(noVigProbability, 0.001, 0.999),
-    overround: null
+    overround: null,
   };
 }
 
@@ -156,9 +189,49 @@ function buildNotes(market, peerOutcomes, confidence, dataQuality) {
   if (peerOutcomes.length < 4) notes.push("thin market");
   if (peerOutcomes.some((outcome) => outcome.isStale)) notes.push("stale peer quote");
   if (!market.settlementRules) notes.push("missing settlement rules");
+  if (!market.model) notes.push("consensus fallback");
   if (confidence < 0.7) notes.push("model confidence below target");
   if (dataQuality < 0.7) notes.push("data quality review needed");
   return notes;
+}
+
+function buildReasonCodes({ market, peerOutcomes, expectedValue: ev, confidence, settings }) {
+  const reasonCodes = [];
+  if (!market.model && peerOutcomes.length < 2) reasonCodes.push("no_reliable_model");
+  if (peerOutcomes.length === 0) reasonCodes.push("no_peer_prices");
+  if (ev < settings.minExpectedValue) reasonCodes.push("ev_below_threshold");
+  if (confidence < settings.minConfidence) reasonCodes.push("confidence_below_threshold");
+  return reasonCodes;
+}
+
+function buildDiagnostics(markets, evaluations) {
+  const reasonCounts = countCodes(evaluations.flatMap((entry) => entry.reasonCodes));
+  const warningCounts = countCodes(evaluations.flatMap((entry) => entry.warningCodes));
+
+  return {
+    totalMarkets: markets.length,
+    totalSelections: evaluations.filter((entry) => entry.recommendation).length,
+    acceptedSelections: evaluations.filter((entry) => entry.accepted && entry.recommendation).length,
+    rejectedSelections: evaluations.filter((entry) => !entry.accepted).length,
+    marketsMissingBet365: evaluations.filter((entry) => entry.reasonCodes.includes("missing_bet365")).length,
+    reasonCounts,
+    warningCounts,
+    topReasons: Object.entries(reasonCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([code, count]) => ({ code, count })),
+  };
+}
+
+function countCodes(codes) {
+  return codes.reduce((acc, code) => {
+    acc[code] = (acc[code] ?? 0) + 1;
+    return acc;
+  }, {});
+}
+
+function noteToReasonCode(note) {
+  return String(note).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
 }
 
 function validateSnapshot(snapshot) {

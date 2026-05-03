@@ -134,6 +134,38 @@
         <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">&#x2B07; CSV</button>
       </div>
 
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">&#x1F50D; Signal Diagnostics</div>
+          <span class="text-muted" id="diagSummary">Waiting for a snapshot</span>
+        </div>
+        <div class="panel-body">
+          <div class="diagnostics-grid">
+            <div class="stat-info-card">
+              <div class="stat-info-label">Accepted</div>
+              <div class="stat-info-value" id="diagAccepted">0</div>
+              <div class="stat-info-sub">signals survived filters</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Rejected</div>
+              <div class="stat-info-value" id="diagRejected">0</div>
+              <div class="stat-info-sub">candidate selections blocked</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Missing Bet365</div>
+              <div class="stat-info-value" id="diagMissingBet365">0</div>
+              <div class="stat-info-sub">markets ignored by engine</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">No Reliable Model</div>
+              <div class="stat-info-value" id="diagNoModel">0</div>
+              <div class="stat-info-sub">needs better peer coverage</div>
+            </div>
+          </div>
+          <div class="diagnostic-reasons" id="diagReasons"></div>
+        </div>
+      </div>
+
       <div class="panel" id="signalsPanel">
         <div class="panel-header">
           <div class="panel-title">&#x1F4C8; Value Signals</div>
@@ -413,9 +445,19 @@
               <div class="stat-info-sub">across all sports</div>
             </div>
             <div class="stat-info-card">
+              <div class="stat-info-label">Snapshot Source</div>
+              <div class="stat-info-value" id="dataStatSource">&mdash;</div>
+              <div class="stat-info-sub">live, cached, or sample</div>
+            </div>
+            <div class="stat-info-card">
               <div class="stat-info-label">Auto-Refresh</div>
               <div class="stat-info-value" id="dataStatPolling" style="color:var(--text-muted)">OFF</div>
               <div class="stat-info-sub">default 72h free-tier cadence</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Safe Fetches Left</div>
+              <div class="stat-info-value" id="dataStatFetchesLeft">&mdash;</div>
+              <div class="stat-info-sub">full cycles at current budget</div>
             </div>
           </div>
           <div class="mt-3">

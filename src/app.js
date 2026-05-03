@@ -55,6 +55,12 @@ const els = {
   mAvgQuality:   $("mAvgQuality"),
   sportFilters:  $("sportFilters"),
   sortSelect:    $("sortSelect"),
+  diagSummary:   $("diagSummary"),
+  diagAccepted:  $("diagAccepted"),
+  diagRejected:  $("diagRejected"),
+  diagMissingBet365: $("diagMissingBet365"),
+  diagNoModel:   $("diagNoModel"),
+  diagReasons:   $("diagReasons"),
   // calculator
   calcOdds:      $("calcOdds"),
   calcProb:      $("calcProb"),
@@ -108,14 +114,15 @@ const els = {
   dataStatLastFetch: $("dataStatLastFetch"),
   dataStatMarkets:   $("dataStatMarkets"),
   dataStatPolling:   $("dataStatPolling"),
+  dataStatSource:    $("dataStatSource"),
+  dataStatFetchesLeft: $("dataStatFetchesLeft"),
 };
 
 // ── Boot ─────────────────────────────────────────────────────
-loadSample();
 bindEvents();
 updateCalculator();
 renderTracker();
-updateLiveStatus();
+boot();
 
 // ── Events ───────────────────────────────────────────────────
 function bindEvents() {
@@ -204,19 +211,48 @@ function switchTab(tab) {
   });
 }
 
+async function boot() {
+  const cachedSnapshot = liveData.restoreCachedSnapshot();
+  if (cachedSnapshot) {
+    isLiveMode = true;
+    els.snapshotEditor.value = JSON.stringify(cachedSnapshot, null, 2);
+    runEngine(cachedSnapshot);
+    showToast("Loaded cached snapshot from local storage", "info");
+  } else {
+    await loadSample();
+  }
+  updateLiveStatus();
+}
+
 // ── Sample data ──────────────────────────────────────────────
 async function loadSample() {
   try {
     const res = await fetch("./src/data/sample-markets.json", { cache: "no-store" });
     const snapshot = await res.json();
+    isLiveMode = false;
     els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
     runEngine(snapshot);
+    updateLiveStatus();
   } catch (err) {
     els.signalsSummary.textContent = `Failed to load sample: ${err.message}`;
   }
 }
 
 // ── Live data fetch ───────────────────────────────────────────
+function applyLiveSnapshot(snapshot, { switchToSignals = false, notify = true } = {}) {
+  els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
+  const report = runEngine(snapshot);
+  isLiveMode = true;
+  updateLiveStatus();
+  if (switchToSignals) {
+    switchTab("signals");
+  }
+  if (report && notify) {
+    maybeNotifySignals(report);
+  }
+  return report;
+}
+
 async function fetchAndRunLive() {
   const btns = [els.btnFetchLive, els.btnFetchLive2];
   btns.forEach((b) => { if (b) { b.disabled = true; b.textContent = "Fetching..."; } });
@@ -224,11 +260,7 @@ async function fetchAndRunLive() {
 
   try {
     const snapshot = await liveData.fetchLiveSnapshot();
-    els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
-    runEngine(snapshot);
-    isLiveMode = true;
-    updateLiveStatus();
-    switchTab("signals");
+    applyLiveSnapshot(snapshot, { switchToSignals: true });
 
     const status = liveData.getFullStatus();
     showToast(
@@ -236,7 +268,13 @@ async function fetchAndRunLive() {
       "success"
     );
   } catch (err) {
-    showToast(`Live fetch failed: ${err.message}`, "error");
+    const fallback = liveData.getLastSnapshot() ?? liveData.restoreCachedSnapshot();
+    if (fallback) {
+      applyLiveSnapshot(fallback, { switchToSignals: true, notify: false });
+      showToast(`Live fetch failed, showing cached snapshot: ${err.message}`, "info");
+    } else {
+      showToast(`Live fetch failed: ${err.message}`, "error");
+    }
     console.error("[App] fetchAndRunLive:", err);
     updateLiveStatus();
   } finally {
@@ -254,10 +292,7 @@ function togglePolling() {
     const status = liveData.getFullStatus();
     liveData.startPolling(
       (snapshot) => {
-        els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
-        runEngine(snapshot);
-        isLiveMode = true;
-        updateLiveStatus();
+        applyLiveSnapshot(snapshot);
         showToast(`Auto-refreshed: ${snapshot.markets.length} markets`, "info");
       },
       undefined,
@@ -289,6 +324,9 @@ function updateLiveStatus() {
   if (polling) {
     els.statLiveStatus.textContent = "polling";
     els.chipLiveStatus.className = "stat-chip live-polling";
+  } else if (status.isCached) {
+    els.statLiveStatus.textContent = "cached";
+    els.chipLiveStatus.className = "stat-chip warn";
   } else if (isLiveMode) {
     els.statLiveStatus.textContent = status.snapshotAge ?? status.lastFetchAge ?? "loaded";
     els.chipLiveStatus.className = "stat-chip live-active";
@@ -332,6 +370,12 @@ function updateLiveStatus() {
     els.dataStatPolling.textContent = polling ? "ON" : "OFF";
     els.dataStatPolling.style.color = polling ? "var(--green)" : "var(--text-muted)";
     els.dataStatPolling.title = `Default cadence: ${status.pollingIntervalLabel}`;
+  }
+  if (els.dataStatSource) {
+    els.dataStatSource.textContent = isLiveMode ? (status.isCached ? "Cached" : "Live") : "Sample";
+  }
+  if (els.dataStatFetchesLeft) {
+    els.dataStatFetchesLeft.textContent = status.quota.estFetchesLeft ?? "-";
   }
 }
 
@@ -383,11 +427,14 @@ function runEngine(snapshot) {
     // Build sport filter chips
     buildSportFilters(report.recommendations);
     renderMetrics(report);
+    renderDiagnostics(report);
     renderSignals();
     updateTopbarStats(report, snapshot);
+    return report;
   } catch (err) {
     els.signalsSummary.textContent = `Engine error: ${err.message}`;
     console.error(err);
+    return null;
   }
 }
 
@@ -395,11 +442,37 @@ function runEngine(snapshot) {
 function renderMetrics(report) {
   const recs = report.recommendations;
   els.mMarkets.textContent    = report.totalMarkets;
-  els.mCandidates.textContent = recs.length;
+  els.mCandidates.textContent = report.totalCandidates;
   els.mTopEv.textContent      = recs.length > 0 ? `+${pct(recs[0].expectedValue)}` : "—";
   els.mAvgConf.textContent    = recs.length > 0 ? pct(avg(recs.map(r => r.confidence))) : "—";
   els.mTotalStake.textContent = recs.length > 0 ? `$${recs.reduce((s,r) => s + r.stakeAmount, 0).toFixed(0)}` : "—";
   els.mAvgQuality.textContent = recs.length > 0 ? pct(avg(recs.map(r => r.dataQuality))) : "—";
+}
+
+function renderDiagnostics(report) {
+  const diagnostics = report.diagnostics ?? {};
+  const reasonPills = (diagnostics.topReasons ?? []).map(({ code, count }) =>
+    `<span class="pill pill-gray">${esc(prettyReason(code))}: ${count}</span>`
+  ).join("");
+
+  if (els.diagSummary) {
+    els.diagSummary.textContent = `${diagnostics.acceptedSelections ?? 0} accepted, ${diagnostics.rejectedSelections ?? 0} blocked`;
+  }
+  if (els.diagAccepted) {
+    els.diagAccepted.textContent = `${diagnostics.acceptedSelections ?? 0}`;
+  }
+  if (els.diagRejected) {
+    els.diagRejected.textContent = `${diagnostics.rejectedSelections ?? 0}`;
+  }
+  if (els.diagMissingBet365) {
+    els.diagMissingBet365.textContent = `${diagnostics.marketsMissingBet365 ?? 0}`;
+  }
+  if (els.diagNoModel) {
+    els.diagNoModel.textContent = `${diagnostics.reasonCounts?.no_reliable_model ?? 0}`;
+  }
+  if (els.diagReasons) {
+    els.diagReasons.innerHTML = reasonPills || `<span class="pill pill-green">No blocking reasons detected</span>`;
+  }
 }
 
 function updateTopbarStats(report, snapshot) {
@@ -447,12 +520,13 @@ function renderSignals() {
   els.signalsSummary.textContent = `${recs.length} of ${currentReport.recommendations.length} signals shown`;
 
   if (recs.length === 0) {
+    const topReason = currentReport.diagnostics?.topReasons?.[0];
     els.signalsBody.innerHTML = `
       <tr><td colspan="8">
         <div class="empty-state">
           <div class="empty-icon">🔍</div>
           <div class="empty-title">No signals match your filters</div>
-          <div class="empty-sub">Try relaxing the sport or risk filters</div>
+          <div class="empty-sub">${topReason ? `Most common blocker: ${esc(prettyReason(topReason.code))}` : "Try relaxing the sport or risk filters"}</div>
         </div>
       </td></tr>`;
     return;
@@ -772,9 +846,55 @@ function persistBetLog() {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
+function maybeNotifySignals(report) {
+  const topSignals = (report.recommendations ?? []).slice(0, 3);
+  if (!topSignals.length) return;
+
+  const storageKey = "bet365EdgeBrain:notifiedSignals";
+  let seen = {};
+  try {
+    seen = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
+  } catch {
+    seen = {};
+  }
+
+  const freshSignals = topSignals.filter((signal) => {
+    const previousEv = seen[signal.id];
+    return previousEv == null || signal.expectedValue > previousEv + 0.01;
+  });
+
+  for (const signal of freshSignals) {
+    seen[signal.id] = signal.expectedValue;
+  }
+
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(seen));
+  } catch {
+    // Ignore storage failures.
+  }
+
+  if (!freshSignals.length) return;
+
+  const message = freshSignals
+    .map((signal) => `${signal.selection} ${pct(signal.expectedValue)}`)
+    .join(" | ");
+
+  showToast(`New value signals: ${message}`, "success");
+
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "default") {
+    Notification.requestPermission().catch(() => {});
+    return;
+  }
+  if (Notification.permission === "granted") {
+    new Notification("Bet365 Edge Brain", { body: message });
+  }
+}
+
 function pct(v)        { return `${(v * 100).toFixed(1)}%`; }
 function avg(arr)      { return arr.reduce((s,v) => s+v, 0) / arr.length; }
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function prettyReason(code) { return String(code).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
 function esc(v)        {
   return String(v)
     .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")

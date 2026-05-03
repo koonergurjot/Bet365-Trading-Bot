@@ -65,8 +65,8 @@ export const QUOTA = {
  * Free-tier-safe polling defaults for the current Odds API settings.
  *
  * Cost math with defaults:
- * - 6 sports x 2 regions x 3 markets = 36 credits per cycle
- * - 500 / 36 ~= 13 full cycles per month
+ * - 3 sports x 2 regions x 3 markets = 18 credits per cycle
+ * - 500 / 18 ~= 27 full cycles per month
  *
  * Safe automatic cadence:
  * - every 72h ~= 10 cycles/month ~= 360 credits
@@ -76,7 +76,7 @@ export const QUOTA = {
 export const POLL_CONFIG = {
   defaultIntervalMs: 72 * 60 * 60 * 1000,
   minIntervalMs: 72 * 60 * 60 * 1000,
-  maxSports: 6,
+  maxSports: 3,
 };
 
 export const PRIORITY_SPORTS = [

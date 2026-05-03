@@ -10,9 +10,11 @@
 import { API_CONFIG } from "../config.js";
 
 const BASE = API_CONFIG.sportsDb.baseUrl;
+const CACHE_KEY = "bet365EdgeBrain:sportsDbCache";
 
 // ── In-memory cache (lives for the duration of the page session) ───────────
 const _cache = new Map();
+hydrateCache();
 
 // ── Known league IDs in TheSportsDB ───────────────────────────────────────
 const LEAGUE_IDS = {
@@ -52,6 +54,7 @@ export async function getTeamInfo(teamName) {
     const t = data?.teams?.[0];
     if (!t) {
       _cache.set(cacheKey, null);
+      persistCache();
       return null;
     }
     const result = {
@@ -64,10 +67,12 @@ export async function getTeamInfo(teamName) {
       sport:   t.strSport?.toLowerCase() ?? null,
     };
     _cache.set(cacheKey, result);
+    persistCache();
     return result;
   } catch (err) {
     console.warn(`[SportsDB] getTeamInfo("${teamName}"):`, err.message);
     _cache.set(cacheKey, null);
+    persistCache();
     return null;
   }
 }
@@ -98,10 +103,12 @@ export async function getLeagueTeams(leagueName) {
       country: t.strCountry ?? null,
     }));
     _cache.set(cacheKey, teams);
+    persistCache();
     return teams;
   } catch (err) {
     console.warn(`[SportsDB] getLeagueTeams("${leagueName}"):`, err.message);
     _cache.set(cacheKey, []);
+    persistCache();
     return [];
   }
 }
@@ -150,6 +157,7 @@ export function getCachedBadge(teamName) {
  */
 export function clearCache() {
   _cache.clear();
+  persistCache();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -158,4 +166,39 @@ export function clearCache() {
 
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function hydrateCache() {
+  const storage = getStorage();
+  if (!storage) return;
+
+  try {
+    const raw = storage.getItem(CACHE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    for (const [key, value] of Object.entries(parsed)) {
+      _cache.set(key, value);
+    }
+  } catch {
+    // Ignore malformed cache state.
+  }
+}
+
+function persistCache() {
+  const storage = getStorage();
+  if (!storage) return;
+
+  try {
+    storage.setItem(CACHE_KEY, JSON.stringify(Object.fromEntries(_cache.entries())));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function getStorage() {
+  try {
+    return typeof localStorage !== "undefined" ? localStorage : null;
+  } catch {
+    return null;
+  }
 }

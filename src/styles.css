@@ -594,6 +594,19 @@ textarea {
 .stat-info-value { font-size: 22px; font-weight: 700; color: var(--text-primary); line-height: 1; }
 .stat-info-sub   { font-size: 11px; color: var(--text-muted); }
 
+.diagnostics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.diagnostic-reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
 /* Toast notifications */
 #toastContainer {
   position: fixed;

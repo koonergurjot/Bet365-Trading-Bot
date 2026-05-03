@@ -57,6 +57,51 @@ const tests = [
     });
 
     assert.equal(report.recommendations.length, 0);
+  }],
+  ["reports diagnostics for blocked selections", () => {
+    const report = analyzeSnapshot(sample, {
+      bankroll: 1000,
+      minExpectedValue: 1,
+      minConfidence: 0.99
+    });
+
+    assert.ok(report.diagnostics);
+    assert.ok(report.diagnostics.rejectedSelections > 0);
+    assert.ok(report.diagnostics.reasonCounts.ev_below_threshold > 0);
+    assert.ok(Array.isArray(report.diagnostics.topReasons));
+  }],
+  ["flags markets that cannot price Bet365 against peers", () => {
+    const report = analyzeSnapshot({
+      snapshotAt: "2026-05-03T12:00:00.000Z",
+      markets: [
+        {
+          id: "missing-bet365-market",
+          sport: "basketball",
+          league: "NBA",
+          event: "Example @ Example",
+          marketType: "moneyline",
+          books: [
+            {
+              name: "DraftKings",
+              updatedAt: "2026-05-03T11:59:00.000Z",
+              outcomes: [
+                { name: "Away", price: 2.1 },
+                { name: "Home", price: 1.8 }
+              ]
+            }
+          ]
+        }
+      ]
+    }, {
+      bankroll: 1000,
+      minExpectedValue: 0.01,
+      minConfidence: 0.4,
+      maxBankrollStake: 0.02
+    });
+
+    assert.equal(report.recommendations.length, 0);
+    assert.equal(report.diagnostics.marketsMissingBet365, 1);
+    assert.equal(report.diagnostics.reasonCounts.missing_bet365, 1);
   }]
 ];
 
