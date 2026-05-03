@@ -23,6 +23,7 @@ let activeSport     = "all";
 let activeRisk      = "all";
 let sortKey         = "score";
 let isLiveMode      = false;     // true once live data has been loaded
+let pendingTrackedSignal = null;
 
 // ── Restore bet tracker from localStorage ────────────────────
 try {
@@ -409,7 +410,7 @@ function runEngineFromEditor() {
 function readEngineConfig() {
   // Derive bankroll from topbar bankroll display (or default)
   const banStr = els.statBankroll.textContent.replace(/[^0-9.]/g, "");
-  return {
+  const baseConfig = {
     bankroll: parseFloat(banStr) || 1000,
     minExpectedValue: 0.03,
     minConfidence:    0.55,
@@ -417,12 +418,17 @@ function readEngineConfig() {
     fractionalKelly:  0.25,
     dynamicThresholds: true,
   };
+  return liveData.getAdaptiveEngineConfig(baseConfig);
 }
 
 function runEngine(snapshot) {
   try {
     currentSnapshot = snapshot;
     const report = analyzeSnapshot(snapshot, readEngineConfig());
+    const shouldRegisterLearning = isLiveMode || snapshot?.provider !== "manual-sample";
+    if (shouldRegisterLearning) {
+      liveData.registerSignalReport(report, snapshot, { persist: isLiveMode });
+    }
     currentReport = report;
 
     // Build sport filter chips
@@ -452,12 +458,16 @@ function renderMetrics(report) {
 
 function renderDiagnostics(report) {
   const diagnostics = report.diagnostics ?? {};
+  const learningSummary = liveData.getLearningSummary?.() ?? null;
   const reasonPills = (diagnostics.topReasons ?? []).map(({ code, count }) =>
     `<span class="pill pill-gray">${esc(prettyReason(code))}: ${count}</span>`
   ).join("");
 
   if (els.diagSummary) {
-    els.diagSummary.textContent = `${diagnostics.acceptedSelections ?? 0} accepted, ${diagnostics.rejectedSelections ?? 0} blocked`;
+    const learningPart = learningSummary?.closedSamples
+      ? ` · CLV ${pct(learningSummary.avgClv ?? 0)} on ${learningSummary.closedSamples} closes`
+      : "";
+    els.diagSummary.textContent = `${diagnostics.acceptedSelections ?? 0} accepted, ${diagnostics.rejectedSelections ?? 0} blocked${learningPart}`;
   }
   if (els.diagAccepted) {
     els.diagAccepted.textContent = `${diagnostics.acceptedSelections ?? 0}`;
@@ -590,6 +600,7 @@ window.trackSignal = function(recIdx) {
   const recs = currentReport.recommendations;
   const rec  = recs[recIdx < recs.length ? recIdx : 0];
   if (!rec) return;
+  pendingTrackedSignal = rec;
   els.betDesc.value  = `${rec.selection} — ${rec.event}`;
   els.betOdds.value  = rec.bet365Decimal.toFixed(2);
   els.betStake.value = rec.stakeAmount.toFixed(2);
@@ -703,10 +714,14 @@ function addBet() {
     stake,
     ev:      isFinite(evVal) ? evVal : null,
     status,
-    addedAt: new Date().toISOString()
+    addedAt: new Date().toISOString(),
+    signalId: pendingTrackedSignal?.id ?? null,
+    signalSelection: pendingTrackedSignal?.selection ?? null,
+    signalEvent: pendingTrackedSignal?.event ?? null,
   });
 
   els.betDesc.value  = "";
+  pendingTrackedSignal = null;
   persistBetLog();
   renderTracker();
 }
@@ -723,6 +738,7 @@ window.removeBet = function(id) {
 };
 
 function renderTracker() {
+  liveData.syncTrackedBets(betLog, { persist: isLiveMode || betLog.some((bet) => bet.signalId) });
   renderTrackerSummary();
   els.trackerBadge.textContent = betLog.length;
 
@@ -754,7 +770,7 @@ function renderTracker() {
       <td class="td-muted">#${bet.id}</td>
       <td>
         <div class="td-primary">${esc(bet.desc)}</div>
-        <div class="td-muted">${new Date(bet.addedAt).toLocaleDateString()}</div>
+        <div class="td-muted">${new Date(bet.addedAt).toLocaleDateString()}${bet.signalId ? " · linked signal" : ""}</div>
       </td>
       <td class="right font-mono">${bet.odds.toFixed(2)}</td>
       <td class="right font-mono">$${bet.stake.toFixed(2)}</td>
@@ -844,6 +860,7 @@ function persistBetLog() {
   try {
     localStorage.setItem("betLog", JSON.stringify(betLog));
   } catch { /* storage full / private mode */ }
+  liveData.syncTrackedBets(betLog, { persist: true });
 }
 
 // ── Helpers ───────────────────────────────────────────────────

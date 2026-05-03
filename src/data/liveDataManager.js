@@ -24,10 +24,19 @@ import {
   createMarketHistoryStore,
   ingestSnapshotHistory,
 } from "../engine/marketHistory.js";
+import {
+  annotateSnapshotWithFeedback,
+  buildAdaptiveLearningContext,
+  createFeedbackStore,
+  observeSnapshotFeedback,
+  registerRecommendations,
+  syncTrackedBets as syncFeedbackTrackedBets,
+} from "../engine/feedbackStore.js";
 import { POLL_CONFIG, API_CONFIG, QUOTA } from "../config.js";
 
 const SNAPSHOT_CACHE_KEY = "bet365EdgeBrain:lastSnapshot";
 const MARKET_HISTORY_CACHE_KEY = "bet365EdgeBrain:marketHistory";
+const FEEDBACK_STORE_CACHE_KEY = "bet365EdgeBrain:feedbackStore";
 const BASELINE_STALE_MINUTES = 12;
 
 let pollingTimer = null;
@@ -39,6 +48,7 @@ let useOddsBlaze = true;
 let oddsBlazeErrors = 0;
 let snapshotSource = "idle";
 let marketHistoryStore = createMarketHistoryStore();
+let feedbackStore = createFeedbackStore();
 
 export async function fetchLiveSnapshot({
   maxSports = POLL_CONFIG.maxSports,
@@ -86,9 +96,12 @@ export async function fetchLiveSnapshot({
   }
 
   hydrateHistoryStore();
+  hydrateFeedbackStore();
   applyBaselineModels(snapshot, marketHistoryStore);
   marketHistoryStore = ingestSnapshotHistory(snapshot, marketHistoryStore);
   annotateSnapshotWithHistory(snapshot, marketHistoryStore);
+  feedbackStore = observeSnapshotFeedback(snapshot, feedbackStore);
+  annotateSnapshotWithFeedback(snapshot, feedbackStore);
 
   if (withSportsDb && snapshot.markets.length > 0) {
     prewarmTeamCache(snapshot.markets).catch((err) => {
@@ -103,6 +116,7 @@ export async function fetchLiveSnapshot({
   snapshotSource = "live";
   persistSnapshotCache(snapshot);
   persistMarketHistoryCache(marketHistoryStore);
+  persistFeedbackStoreCache(feedbackStore);
 
   console.log(
     `[LiveData] Ready - ${snapshot.markets.length} markets, ` +
@@ -120,12 +134,15 @@ export function restoreCachedSnapshot() {
   }
 
   hydrateHistoryStore();
+  hydrateFeedbackStore();
   lastSnapshot = cached.snapshot;
   lastFetchAt = cached.cachedAt ? new Date(cached.cachedAt) : new Date(cached.snapshot.snapshotAt ?? Date.now());
   if (!Object.keys(marketHistoryStore.markets ?? {}).length) {
     marketHistoryStore = ingestSnapshotHistory(lastSnapshot, marketHistoryStore);
   }
   annotateSnapshotWithHistory(lastSnapshot, marketHistoryStore);
+  feedbackStore = observeSnapshotFeedback(lastSnapshot, feedbackStore);
+  annotateSnapshotWithFeedback(lastSnapshot, feedbackStore);
   snapshotSource = "cache";
   return lastSnapshot;
 }
@@ -241,7 +258,40 @@ export function getFullStatus() {
     pollingIntervalHrs: POLL_CONFIG.defaultIntervalMs / 3600000,
     pollingIntervalLabel: formatPollingInterval(POLL_CONFIG.defaultIntervalMs),
     historyMarkets: Object.keys(marketHistoryStore.markets ?? {}).length,
+    learningSignals: Object.keys(feedbackStore.signals ?? {}).length,
+    learningSummary: buildAdaptiveLearningContext(feedbackStore).summary,
   };
+}
+
+export function registerSignalReport(report, snapshot = lastSnapshot, { persist = true } = {}) {
+  hydrateFeedbackStore();
+  feedbackStore = registerRecommendations(report, snapshot, feedbackStore);
+  if (persist) {
+    persistFeedbackStoreCache(feedbackStore);
+  }
+  return report;
+}
+
+export function syncTrackedBets(betLog, { persist = true } = {}) {
+  hydrateFeedbackStore();
+  feedbackStore = syncFeedbackTrackedBets(betLog, feedbackStore);
+  if (persist) {
+    persistFeedbackStoreCache(feedbackStore);
+  }
+}
+
+export function getAdaptiveEngineConfig(baseConfig = {}) {
+  hydrateFeedbackStore();
+  const adaptiveLearning = buildAdaptiveLearningContext(feedbackStore);
+  return {
+    ...baseConfig,
+    adaptiveLearning,
+  };
+}
+
+export function getLearningSummary() {
+  hydrateFeedbackStore();
+  return buildAdaptiveLearningContext(feedbackStore).summary;
 }
 
 export function resetOddsBlaze() {
@@ -281,7 +331,9 @@ function applyBaselineModels(snapshot, historyStore) {
 
       const consensus = buildWeightedConsensus(comparableOutcomes, {
         snapshotAt: market.snapshotAt,
-        agreementHistory: historyStore?.bookStats ?? {},
+        agreementHistory: historyStore,
+        market,
+        targetDescriptor: descriptor,
       });
       const descriptor = normalizeOutcomeDescriptor(market, outcome);
       const shape = describeMarketShape(market, outcome, comparableOutcomes);
@@ -400,12 +452,47 @@ function readMarketHistoryCache() {
   }
 }
 
+function persistFeedbackStoreCache(store) {
+  const storage = getStorage();
+  if (!storage || !store) return;
+
+  try {
+    storage.setItem(FEEDBACK_STORE_CACHE_KEY, JSON.stringify({
+      cachedAt: new Date().toISOString(),
+      store,
+    }));
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function readFeedbackStoreCache() {
+  const storage = getStorage();
+  if (!storage) return null;
+
+  try {
+    const raw = storage.getItem(FEEDBACK_STORE_CACHE_KEY);
+    const parsed = raw ? JSON.parse(raw) : null;
+    return parsed?.store ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function hydrateHistoryStore() {
   if (Object.keys(marketHistoryStore.markets ?? {}).length > 0) {
     return;
   }
 
   marketHistoryStore = createMarketHistoryStore(readMarketHistoryCache());
+}
+
+function hydrateFeedbackStore() {
+  if (Object.keys(feedbackStore.signals ?? {}).length > 0) {
+    return;
+  }
+
+  feedbackStore = createFeedbackStore(readFeedbackStoreCache());
 }
 
 function buildStatusSummary(status) {

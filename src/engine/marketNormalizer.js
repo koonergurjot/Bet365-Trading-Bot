@@ -130,6 +130,18 @@ export function buildMarketIdentity(market) {
   };
 }
 
+export function buildOutcomeContextKey(market, descriptorOrOutcome) {
+  const descriptor = descriptorOrOutcome?.selectionKey
+    ? descriptorOrOutcome
+    : normalizeOutcomeDescriptor(market, descriptorOrOutcome);
+
+  return [
+    canonicalizeText(market?.sport) || "unknown",
+    normalizeMarketType(market?.marketType) || "unknown",
+    canonicalizeText(descriptor.role) || "selection",
+  ].join("::");
+}
+
 export function normalizeOutcomeDescriptor(market, outcome) {
   const marketType = normalizeMarketType(market?.marketType);
   const { homeTeam, awayTeam } = getMarketParticipants(market);
@@ -253,6 +265,8 @@ export function collectComparableOutcomes(market, targetOutcome, {
 export function buildWeightedConsensus(peerOutcomes, {
   snapshotAt,
   agreementHistory = {},
+  market = null,
+  targetDescriptor = null,
 } = {}) {
   if (!peerOutcomes.length) {
     return {
@@ -273,7 +287,14 @@ export function buildWeightedConsensus(peerOutcomes, {
   for (const outcome of peerOutcomes) {
     const sharpnessWeight = getSharpnessWeight(outcome.normalizedBook);
     const freshnessWeight = getRecencyWeight(outcome.updatedAt, snapshotAt);
-    const agreementWeight = getAgreementWeight(agreementHistory?.[outcome.normalizedBook]);
+    const agreementWeight = getAgreementWeight(
+      resolveAgreementHistory({
+        agreementHistory,
+        bookName: outcome.normalizedBook,
+        market,
+        targetDescriptor: targetDescriptor ?? outcome.target ?? null,
+      }),
+    );
     const equivalenceWeight = clamp(Number(outcome.equivalenceWeight ?? 1), 0.1, 1);
     const combinedWeight = sharpnessWeight * freshnessWeight * agreementWeight * equivalenceWeight;
 
@@ -433,6 +454,41 @@ function getAgreementWeight(history) {
   return clamp(1.18 - meanError * 3.2 + stability * 0.12, 0.72, 1.22);
 }
 
+function resolveAgreementHistory({ agreementHistory, bookName, market, targetDescriptor }) {
+  if (!agreementHistory) {
+    return null;
+  }
+
+  const normalizedBook = normalizeBookName(bookName);
+  const globalHistory = agreementHistory.bookStats?.[normalizedBook] ?? agreementHistory?.[normalizedBook] ?? null;
+  if (!market || !targetDescriptor) {
+    return globalHistory;
+  }
+
+  const contextKey = buildOutcomeContextKey(market, targetDescriptor);
+  const contextualHistory = agreementHistory.contextBookStats?.[`${normalizedBook}::${contextKey}`] ?? null;
+
+  if (!contextualHistory) {
+    return globalHistory;
+  }
+
+  return {
+    samples: Number(contextualHistory.samples ?? 0) + Number(globalHistory?.samples ?? 0),
+    meanAbsoluteError: weightedAverage(
+      contextualHistory.meanAbsoluteError,
+      contextualHistory.samples,
+      globalHistory?.meanAbsoluteError,
+      globalHistory?.samples,
+    ),
+    stability: weightedAverage(
+      contextualHistory.stability,
+      contextualHistory.samples,
+      globalHistory?.stability,
+      globalHistory?.samples,
+    ),
+  };
+}
+
 function calculateLineDistance(sourcePoint, targetPoint) {
   if (sourcePoint === null || targetPoint === null) {
     return 0;
@@ -528,4 +584,16 @@ function roundLine(line) {
 function formatLineKey(line) {
   const rounded = roundLine(line);
   return Number.isInteger(rounded) ? `${rounded}.0` : String(rounded);
+}
+
+function weightedAverage(aValue, aWeight, bValue, bWeight) {
+  const leftWeight = Number(aWeight ?? 0);
+  const rightWeight = Number(bWeight ?? 0);
+  const totalWeight = leftWeight + rightWeight;
+
+  if (totalWeight <= 0) {
+    return Number.isFinite(aValue) ? Number(aValue) : Number(bValue ?? 0);
+  }
+
+  return ((Number(aValue ?? 0) * leftWeight) + (Number(bValue ?? 0) * rightWeight)) / totalWeight;
 }

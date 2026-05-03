@@ -11,6 +11,8 @@ import {
   normalizeBookName,
   normalizeOutcomeDescriptor,
 } from "./marketNormalizer.js";
+import { applyCrossMarketContext } from "./crossMarketAnalyzer.js";
+import { resolveAdaptiveLearningProfile } from "./feedbackStore.js";
 
 const DEFAULT_CONFIG = {
   bankroll: 1000,
@@ -20,6 +22,7 @@ const DEFAULT_CONFIG = {
   fractionalKelly: 0.25,
   staleMinutes: 8,
   dynamicThresholds: true,
+  adaptiveLearning: null,
 };
 
 export function analyzeSnapshot(snapshot, config = {}) {
@@ -27,6 +30,7 @@ export function analyzeSnapshot(snapshot, config = {}) {
   validateSnapshot(snapshot);
 
   const evaluations = snapshot.markets.flatMap((market) => evaluateMarket(market, settings));
+  const crossMarketSummary = applyCrossMarketContext(snapshot, evaluations);
   const recommendations = evaluations
     .filter((entry) => entry.accepted && entry.recommendation)
     .map((entry) => entry.recommendation)
@@ -39,7 +43,8 @@ export function analyzeSnapshot(snapshot, config = {}) {
     totalMarkets: snapshot.markets.length,
     totalCandidates: evaluations.filter((entry) => entry.recommendation).length,
     recommendations,
-    diagnostics: buildDiagnostics(snapshot.markets, evaluations),
+    learningSummary: settings.adaptiveLearning?.summary ?? null,
+    diagnostics: buildDiagnostics(snapshot.markets, evaluations, crossMarketSummary),
   };
 }
 
@@ -66,21 +71,30 @@ function evaluateMarket(market, settings) {
   return bet365Book.outcomes.map((bet365Outcome) => {
     const descriptor = normalizeOutcomeDescriptor(market, bet365Outcome);
     const peerOutcomes = collectPeerOutcomes(market, bet365Outcome, settings);
-    const consensus = buildConsensus(peerOutcomes, market);
+    const consensus = buildConsensus(peerOutcomes, market, descriptor);
     const modelProbability = chooseModelProbability(market, descriptor, consensus.noVigProbability);
     const ev = expectedValue(modelProbability, bet365Outcome.price);
     const rawKelly = kellyFraction(modelProbability, bet365Outcome.price);
     const history = market.historyModel?.positions?.[descriptor.selectionKey] ?? null;
     const marketShape = describeMarketShape(market, bet365Outcome, peerOutcomes);
-    const dataQuality = scoreDataQuality(market, peerOutcomes, settings, history, marketShape);
-    const confidence = scoreConfidence(market, dataQuality, consensus, history);
+    const peerBookCount = new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size;
+    const learningProfile = resolveAdaptiveLearningProfile(settings.adaptiveLearning, {
+      sport: market.sport,
+      marketType: market.marketType,
+      peerCount: peerBookCount,
+      isLagging: Boolean(history?.isLagging),
+      modelSource: market.model?.version,
+      isLineNormalized: Boolean(marketShape.usedLineNormalization),
+    });
+    const dataQuality = scoreDataQuality(market, peerOutcomes, settings, history, marketShape, learningProfile);
+    const confidence = scoreConfidence(market, dataQuality, consensus, history, learningProfile);
     const thresholds = buildDynamicThresholds({
       market,
       settings,
       peerOutcomes,
-      descriptor,
       history,
       marketShape,
+      learningProfile,
     });
     const stakeFraction = clamp(rawKelly * settings.fractionalKelly, 0, settings.maxBankrollStake);
     const risk = scoreRisk({
@@ -90,8 +104,9 @@ function evaluateMarket(market, settings) {
       dataQuality,
       price: bet365Outcome.price,
       history,
+      learningProfile,
     });
-    const notes = buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape);
+    const notes = buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape, learningProfile);
     const reasonCodes = buildReasonCodes({
       market,
       peerOutcomes,
@@ -117,6 +132,9 @@ function evaluateMarket(market, settings) {
         event: market.event,
         marketType: market.marketType,
         selection: bet365Outcome.name,
+        selectionKey: descriptor.selectionKey,
+        selectionRole: descriptor.role,
+        selectionGroup: descriptor.groupKey,
         ...(descriptor.point !== null ? { line: descriptor.point } : {}),
         commenceTime: market.commenceTime,
         bet365Decimal: bet365Outcome.price,
@@ -135,8 +153,9 @@ function evaluateMarket(market, settings) {
         thresholds,
         history,
         marketShape,
-        score: buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk }),
-        peerBookCount: new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size,
+        learningProfile,
+        score: buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk, learningProfile }),
+        peerBookCount,
         staleBookCount: new Set(peerOutcomes.filter((outcome) => outcome.isStale).map((outcome) => outcome.normalizedBook)).size,
         modelSource: market.model?.version ?? "consensus-fallback",
         notes,
@@ -152,9 +171,15 @@ function collectPeerOutcomes(market, targetOutcome, settings) {
   });
 }
 
-function buildConsensus(peerOutcomes, market) {
+function buildConsensus(peerOutcomes, market, descriptor) {
   return buildWeightedConsensus(peerOutcomes, {
     snapshotAt: market.snapshotAt,
+    agreementHistory: {
+      bookStats: market.historyModel?.bookStats,
+      contextBookStats: market.historyModel?.contextBookStats,
+    },
+    market,
+    targetDescriptor: descriptor,
   });
 }
 
@@ -178,7 +203,7 @@ function chooseModelProbability(market, descriptor, consensusProbability) {
   return clamp(consensusProbability, 0.001, 0.999);
 }
 
-function scoreDataQuality(market, peerOutcomes, settings, history, marketShape) {
+function scoreDataQuality(market, peerOutcomes, settings, history, marketShape, learningProfile) {
   const bookDepth = clamp(new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size / 6, 0, 1);
   const freshness = 1 - clamp(peerOutcomes.filter((outcome) => outcome.isStale).length / Math.max(peerOutcomes.length, 1), 0, 1);
   const modelFreshness = isOlderThan(market.snapshotAt, new Date().toISOString(), settings.staleMinutes) ? 0.45 : 1;
@@ -187,37 +212,50 @@ function scoreDataQuality(market, peerOutcomes, settings, history, marketShape) 
     ? clamp(1 - marketShape.averageLineDistance / 4, 0.55, 1)
     : 1;
   const historyCoverage = history ? clamp(history.sampleCount / 6, 0.25, 1) : 0.5;
+  const reliability = history?.selectionReliability
+    ? clamp(1 - history.selectionReliability.averageError * 4 + history.selectionReliability.stability * 0.15, 0.4, 1)
+    : 0.55;
+  const learningLift = learningProfile ? clamp(0.5 + learningProfile.confidenceBoost * 3, 0.4, 0.7) : 0.55;
 
   return clamp(
-    bookDepth * 0.28
-      + freshness * 0.24
-      + modelFreshness * 0.16
-      + settlementRisk * 0.14
-      + lineQuality * 0.1
-      + historyCoverage * 0.08,
+    bookDepth * 0.23
+      + freshness * 0.2
+      + modelFreshness * 0.13
+      + settlementRisk * 0.12
+      + lineQuality * 0.09
+      + historyCoverage * 0.08
+      + reliability * 0.09
+      + learningLift * 0.06,
     0,
     1
   );
 }
 
-function scoreConfidence(market, dataQuality, consensus, history) {
+function scoreConfidence(market, dataQuality, consensus, history, learningProfile) {
   const modelConfidence = Number(market.model?.confidence ?? 0.5);
   const agreementScore = clamp(Number(consensus.agreementScore ?? 0.9) - 0.75, 0, 0.4);
   const historyAdjustment = history
-    ? (history.isLagging ? 0.06 : 0) - (history.isSnappingBack ? 0.06 : 0) + Math.min(history.persistenceSamples / 20, 0.08)
+    ? (history.isLagging ? 0.06 : 0)
+      - (history.isSnappingBack ? 0.06 : 0)
+      + Math.min(history.persistenceSamples / 20, 0.08)
+      + (history.leadLag?.lagRate ?? 0) * 0.04
+    : 0;
+  const learningAdjustment = learningProfile
+    ? clamp(learningProfile.confidenceBoost, -0.05, 0.05)
     : 0;
 
   return clamp(
-    modelConfidence * 0.46
-      + dataQuality * 0.38
+    modelConfidence * 0.42
+      + dataQuality * 0.34
       + agreementScore * 0.18
-      + historyAdjustment,
+      + historyAdjustment
+      + learningAdjustment,
     0,
     1
   );
 }
 
-function buildDynamicThresholds({ market, settings, peerOutcomes, history, marketShape }) {
+function buildDynamicThresholds({ market, settings, peerOutcomes, history, marketShape, learningProfile }) {
   const dynamic = settings.dynamicThresholds !== false;
   const baseEv = Number(settings.minExpectedValue ?? DEFAULT_CONFIG.minExpectedValue);
   const baseConfidence = Number(settings.minConfidence ?? DEFAULT_CONFIG.minConfidence);
@@ -304,6 +342,12 @@ function buildDynamicThresholds({ market, settings, peerOutcomes, history, marke
     rationale.push("snap-back risk");
   }
 
+  if (learningProfile?.reliability > 0.15) {
+    minExpectedValue += learningProfile.thresholdDeltaEv;
+    minConfidence += learningProfile.thresholdDeltaConfidence;
+    rationale.push("adaptive threshold profile");
+  }
+
   return {
     minExpectedValue: clamp(Number(minExpectedValue.toFixed(4)), 0.012, 0.065),
     minConfidence: clamp(Number(minConfidence.toFixed(4)), 0.48, 0.82),
@@ -311,19 +355,20 @@ function buildDynamicThresholds({ market, settings, peerOutcomes, history, marke
   };
 }
 
-function scoreRisk({ ev, stakeFraction, confidence, dataQuality, price, history }) {
+function scoreRisk({ ev, stakeFraction, confidence, dataQuality, price, history, learningProfile }) {
   const longshotPenalty = price >= 5 ? 2 : price >= 3.5 ? 1 : 0;
   const confidencePenalty = confidence < 0.7 ? 2 : confidence < 0.82 ? 1 : 0;
   const qualityPenalty = dataQuality < 0.65 ? 2 : dataQuality < 0.8 ? 1 : 0;
   const stakePenalty = stakeFraction > 0.015 ? 1 : 0;
   const evPenalty = ev < 0.05 ? 1 : 0;
   const historyPenalty = history?.isSnappingBack ? 2 : 0;
-  const penalty = longshotPenalty + confidencePenalty + qualityPenalty + stakePenalty + evPenalty + historyPenalty;
+  const learningPenalty = learningProfile && learningProfile.confidenceBoost < 0 ? 1 : 0;
+  const penalty = longshotPenalty + confidencePenalty + qualityPenalty + stakePenalty + evPenalty + historyPenalty + learningPenalty;
   const label = penalty <= 2 ? "Low" : penalty <= 4 ? "Medium" : "High";
   return { label, penalty };
 }
 
-function buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape) {
+function buildNotes(market, peerOutcomes, confidence, dataQuality, history, marketShape, learningProfile) {
   const notes = [];
   if (new Set(peerOutcomes.map((outcome) => outcome.normalizedBook)).size < 4) notes.push("thin market");
   if (peerOutcomes.some((outcome) => outcome.isStale)) notes.push("stale peer quote");
@@ -335,6 +380,9 @@ function buildNotes(market, peerOutcomes, confidence, dataQuality, history, mark
   if (history?.isLagging) notes.push("bet365 lagging market");
   if (history?.persistenceSamples >= 3) notes.push("persistent edge");
   if (history?.isSnappingBack) notes.push("market snapping back");
+  if (history?.leadLag?.lagRate >= 0.45) notes.push("repeatable lead-lag pattern");
+  if (learningProfile?.reliability > 0.15 && learningProfile.confidenceBoost > 0) notes.push("positive CLV profile");
+  if (learningProfile?.reliability > 0.15 && learningProfile.confidenceBoost < 0) notes.push("weak CLV profile");
   return notes;
 }
 
@@ -348,16 +396,18 @@ function buildReasonCodes({ market, peerOutcomes, expectedValue: ev, confidence,
   return reasonCodes;
 }
 
-function buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk }) {
+function buildRecommendationScore({ ev, confidence, dataQuality, history, marketShape, risk, learningProfile }) {
   const lagBoost = history?.isLagging ? 3 : 0;
   const persistenceBoost = Math.min((history?.persistenceMinutes ?? 0) / 20, 3);
   const lineBoost = marketShape.usedLineNormalization ? 1.5 : 0;
   const snapbackPenalty = history?.isSnappingBack ? 4 : 0;
+  const leadLagBoost = (history?.leadLag?.lagRate ?? 0) * 3;
+  const learningBoost = learningProfile?.scoreBoost ?? 0;
 
-  return ev * 100 + confidence * 10 + dataQuality * 6 + lagBoost + persistenceBoost + lineBoost - risk.penalty - snapbackPenalty;
+  return ev * 100 + confidence * 10 + dataQuality * 6 + lagBoost + persistenceBoost + lineBoost + leadLagBoost + learningBoost - risk.penalty - snapbackPenalty;
 }
 
-function buildDiagnostics(markets, evaluations) {
+function buildDiagnostics(markets, evaluations, crossMarketSummary) {
   const reasonCounts = countCodes(evaluations.flatMap((entry) => entry.reasonCodes));
   const warningCounts = countCodes(evaluations.flatMap((entry) => entry.warningCodes));
 
@@ -367,6 +417,9 @@ function buildDiagnostics(markets, evaluations) {
     acceptedSelections: evaluations.filter((entry) => entry.accepted && entry.recommendation).length,
     rejectedSelections: evaluations.filter((entry) => !entry.accepted).length,
     marketsMissingBet365: evaluations.filter((entry) => entry.reasonCodes.includes("missing_bet365")).length,
+    confirmedSelections: crossMarketSummary?.confirmedSelections ?? 0,
+    conflictingSelections: crossMarketSummary?.conflictingSelections ?? 0,
+    inconsistentEvents: crossMarketSummary?.inconsistentEvents ?? 0,
     reasonCounts,
     warningCounts,
     topReasons: Object.entries(reasonCounts)

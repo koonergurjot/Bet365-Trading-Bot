@@ -5,17 +5,22 @@ import {
   collectComparableOutcomes,
   normalizeBookName,
   normalizeOutcomeDescriptor,
+  buildOutcomeContextKey,
 } from "./marketNormalizer.js";
 
-const HISTORY_VERSION = 1;
+const HISTORY_VERSION = 2;
 const MAX_MARKETS = 240;
 const MAX_SAMPLES_PER_POSITION = 18;
 const HISTORY_STALE_HOURS = 72;
+const LEAD_MOVE_THRESHOLD = 0.012;
+const BET365_STATIC_THRESHOLD = 0.004;
 
 export function createMarketHistoryStore(raw = null) {
   return {
     version: HISTORY_VERSION,
     bookStats: { ...(raw?.bookStats ?? {}) },
+    contextBookStats: { ...(raw?.contextBookStats ?? {}) },
+    leadLagStats: { ...(raw?.leadLagStats ?? {}) },
     markets: { ...(raw?.markets ?? {}) },
   };
 }
@@ -47,9 +52,12 @@ export function ingestSnapshotHistory(snapshot, store) {
         continue;
       }
 
+      const contextKey = buildOutcomeContextKey(market, descriptor);
       const consensus = buildWeightedConsensus(peers, {
         snapshotAt: market.snapshotAt ?? snapshotTimestamp,
-        agreementHistory: history.bookStats,
+        agreementHistory: history,
+        market,
+        targetDescriptor: descriptor,
       });
       const sample = buildHistorySample(market, outcome, descriptor, peers, consensus, snapshotTimestamp);
 
@@ -58,15 +66,22 @@ export function ingestSnapshotHistory(snapshot, store) {
           role: descriptor.role,
           canonicalName: descriptor.canonicalName,
           samples: [],
+          pendingLeads: {},
         };
       }
 
-      marketState.positions[positionHistoryKey].samples.push(sample);
-      marketState.positions[positionHistoryKey].samples = marketState.positions[positionHistoryKey].samples
-        .slice(-MAX_SAMPLES_PER_POSITION);
+      const positionState = marketState.positions[positionHistoryKey];
+      const previousSample = positionState.samples.at(-1) ?? null;
+
+      positionState.samples.push(sample);
+      positionState.samples = positionState.samples.slice(-MAX_SAMPLES_PER_POSITION);
+
+      if (previousSample) {
+        updateLeadLagStats(history.leadLagStats, contextKey, positionState.pendingLeads, previousSample, sample);
+      }
 
       for (const peer of peers) {
-        updateBookStats(history.bookStats, peer, consensus.noVigProbability);
+        updateBookStats(history, contextKey, peer, consensus.noVigProbability);
       }
     }
 
@@ -99,12 +114,17 @@ export function annotateSnapshotWithHistory(snapshot, store) {
         continue;
       }
 
-      positions[descriptor.selectionKey] = buildPositionHistoryModel(state.samples);
+      const contextKey = buildOutcomeContextKey(market, descriptor);
+      positions[descriptor.selectionKey] = buildPositionHistoryModel(
+        state.samples,
+        history,
+        contextKey,
+      );
     }
 
     if (Object.keys(positions).length > 0) {
       market.historyModel = {
-        version: "line-history-v1",
+        version: "line-history-v2",
         positions,
       };
     }
@@ -118,6 +138,13 @@ function buildHistorySample(market, outcome, descriptor, peers, consensus, fallb
   const averagePeerLine = peers.length
     ? peers.reduce((sum, peer) => sum + Number(peer.matchedLine ?? descriptor.point ?? 0), 0) / peers.length
     : descriptor.point ?? null;
+  const peerQuotes = Object.fromEntries(peers.map((peer) => [
+    normalizeBookName(peer.normalizedBook ?? peer.book),
+    {
+      probability: Number(peer.probability.toFixed(6)),
+      updatedAt: peer.updatedAt,
+    },
+  ]));
 
   return {
     recordedAt: market.snapshotAt ?? fallbackTimestamp,
@@ -129,10 +156,11 @@ function buildHistorySample(market, outcome, descriptor, peers, consensus, fallb
     peerCount: peers.length,
     averagePeerLine: Number.isFinite(averagePeerLine) ? Number(averagePeerLine.toFixed(3)) : null,
     edge: Number((consensus.noVigProbability - impliedProbability).toFixed(6)),
+    peerQuotes,
   };
 }
 
-function buildPositionHistoryModel(samples) {
+function buildPositionHistoryModel(samples, history, contextKey) {
   const ordered = [...samples].sort((a, b) => Date.parse(a.recordedAt) - Date.parse(b.recordedAt));
   const latest = ordered.at(-1);
   const previous = ordered.at(-2) ?? latest;
@@ -142,6 +170,7 @@ function buildPositionHistoryModel(samples) {
   const trailingPositive = collectTrailingEdgeSamples(ordered, currentEdge);
   const persistenceMinutes = calculatePersistenceMinutes(trailingPositive);
   const snapbackDelta = previousEdge - currentEdge;
+  const leadLag = summarizeLeadLag(history.leadLagStats, contextKey);
 
   return {
     sampleCount: ordered.length,
@@ -155,7 +184,10 @@ function buildPositionHistoryModel(samples) {
     persistenceMinutes,
     lagScore: clamp(
       currentEdge > 0
-        ? currentEdge * 14 + Math.max(0, currentEdge - previousEdge) * 8 + Math.min(persistenceMinutes / 90, 0.28)
+        ? currentEdge * 14
+          + Math.max(0, currentEdge - previousEdge) * 8
+          + Math.min(persistenceMinutes / 90, 0.28)
+          + leadLag.lagRate * 0.18
         : 0,
       0,
       1
@@ -167,12 +199,18 @@ function buildPositionHistoryModel(samples) {
       0,
       1
     ),
-    isLagging: currentEdge > 0.018 && (currentEdge >= previousEdge - 0.003 || persistenceMinutes >= 20),
+    isLagging: currentEdge > 0.018 && (
+      currentEdge >= previousEdge - 0.003
+      || persistenceMinutes >= 20
+      || leadLag.lagRate >= 0.45
+    ),
     isSnappingBack: snapbackDelta > 0.012 || (previousEdge > 0.02 && currentEdge <= 0),
     edge: Number(currentEdge.toFixed(6)),
     marketProbability: latest.marketProbability,
     bet365ImpliedProbability: latest.bet365ImpliedProbability,
     lastRecordedAt: latest.recordedAt,
+    selectionReliability: summarizeSelectionReliability(history, contextKey),
+    leadLag,
   };
 }
 
@@ -210,25 +248,130 @@ function calculatePersistenceMinutes(samples) {
   return Math.max(0, Math.round((end - start) / 60000));
 }
 
-function updateBookStats(bookStats, peer, consensusProbability) {
-  const key = normalizeBookName(peer.normalizedBook ?? peer.book);
-  const current = bookStats[key] ?? {
-    samples: 0,
-    meanAbsoluteError: 0,
-    stability: 0.5,
-    lastSeenAt: null,
-  };
-
+function updateBookStats(history, contextKey, peer, consensusProbability) {
+  const bookKey = normalizeBookName(peer.normalizedBook ?? peer.book);
+  const globalStats = history.bookStats[bookKey] ?? createBookStatsRecord();
+  const contextCompositeKey = `${bookKey}::${contextKey}`;
+  const contextStats = history.contextBookStats[contextCompositeKey] ?? createBookStatsRecord();
   const error = Math.abs(Number(peer.probability ?? 0.5) - Number(consensusProbability ?? 0.5));
-  current.samples += 1;
-  current.meanAbsoluteError = runningAverage(current.meanAbsoluteError, current.samples, error);
-  current.stability = runningAverage(
-    current.stability,
-    current.samples,
-    clamp(1 - error * 6 - Number(peer.lineDistance ?? 0) * 0.05, 0, 1)
-  );
-  current.lastSeenAt = peer.updatedAt ?? new Date().toISOString();
-  bookStats[key] = current;
+  const stabilityValue = clamp(1 - error * 6 - Number(peer.lineDistance ?? 0) * 0.05, 0, 1);
+
+  applyBookStatsUpdate(globalStats, error, stabilityValue, peer.updatedAt);
+  applyBookStatsUpdate(contextStats, error, stabilityValue, peer.updatedAt);
+
+  history.bookStats[bookKey] = globalStats;
+  history.contextBookStats[contextCompositeKey] = contextStats;
+}
+
+function updateLeadLagStats(leadLagStats, contextKey, pendingLeads, previousSample, currentSample) {
+  const bet365Delta = Number(currentSample.bet365ImpliedProbability ?? 0) - Number(previousSample.bet365ImpliedProbability ?? 0);
+  const now = currentSample.recordedAt;
+  const currentBooks = new Set([
+    ...Object.keys(previousSample.peerQuotes ?? {}),
+    ...Object.keys(currentSample.peerQuotes ?? {}),
+  ]);
+
+  for (const bookKey of currentBooks) {
+    const previousQuote = previousSample.peerQuotes?.[bookKey];
+    const currentQuote = currentSample.peerQuotes?.[bookKey];
+    if (!previousQuote || !currentQuote) {
+      delete pendingLeads[bookKey];
+      continue;
+    }
+
+    const peerDelta = Number(currentQuote.probability ?? 0) - Number(previousQuote.probability ?? 0);
+    const statKey = `${bookKey}::${contextKey}`;
+    const stats = leadLagStats[statKey] ?? {
+      book: bookKey,
+      contextKey,
+      leadSignals: 0,
+      catchups: 0,
+      averageLagMinutes: 0,
+      averageLeadMove: 0,
+    };
+
+    const pending = pendingLeads[bookKey];
+
+    if (pending && Math.sign(bet365Delta) === pending.direction && Math.abs(bet365Delta) >= pending.requiredMove) {
+      stats.catchups += 1;
+      stats.averageLagMinutes = runningAverage(
+        stats.averageLagMinutes,
+        stats.catchups,
+        calculateMinutesBetween(pending.recordedAt, now),
+      );
+      delete pendingLeads[bookKey];
+    } else if (pending && calculateMinutesBetween(pending.recordedAt, now) > 180) {
+      delete pendingLeads[bookKey];
+    }
+
+    if (Math.abs(peerDelta) >= LEAD_MOVE_THRESHOLD && Math.abs(bet365Delta) <= BET365_STATIC_THRESHOLD) {
+      stats.leadSignals += 1;
+      stats.averageLeadMove = runningAverage(stats.averageLeadMove, stats.leadSignals, Math.abs(peerDelta));
+      pendingLeads[bookKey] = {
+        recordedAt: now,
+        direction: Math.sign(peerDelta),
+        requiredMove: Math.max(BET365_STATIC_THRESHOLD, Math.abs(peerDelta) * 0.45),
+      };
+    }
+
+    leadLagStats[statKey] = stats;
+  }
+}
+
+function summarizeSelectionReliability(history, contextKey) {
+  const matching = Object.entries(history.contextBookStats)
+    .filter(([key]) => key.endsWith(`::${contextKey}`))
+    .map(([, value]) => value);
+
+  if (!matching.length) {
+    return {
+      books: 0,
+      averageError: 0.08,
+      stability: 0.5,
+    };
+  }
+
+  const totalSamples = matching.reduce((sum, value) => sum + value.samples, 0);
+  const weightedError = matching.reduce((sum, value) => sum + value.meanAbsoluteError * value.samples, 0);
+  const weightedStability = matching.reduce((sum, value) => sum + value.stability * value.samples, 0);
+
+  return {
+    books: matching.length,
+    averageError: Number((weightedError / Math.max(totalSamples, 1)).toFixed(6)),
+    stability: Number((weightedStability / Math.max(totalSamples, 1)).toFixed(6)),
+  };
+}
+
+function summarizeLeadLag(leadLagStats, contextKey) {
+  const matching = Object.entries(leadLagStats)
+    .filter(([key]) => key.endsWith(`::${contextKey}`))
+    .map(([, value]) => value)
+    .filter((value) => value.leadSignals > 0);
+
+  if (!matching.length) {
+    return {
+      bookCount: 0,
+      lagRate: 0,
+      averageLagMinutes: 0,
+      leadSignals: 0,
+      leaderBook: null,
+      confidence: 0,
+    };
+  }
+
+  const totalLeadSignals = matching.reduce((sum, value) => sum + value.leadSignals, 0);
+  const totalCatchups = matching.reduce((sum, value) => sum + value.catchups, 0);
+  const weightedLagMinutes = matching.reduce((sum, value) => sum + value.averageLagMinutes * value.catchups, 0);
+  const bestLeader = [...matching].sort((a, b) => (b.catchups / Math.max(b.leadSignals, 1)) - (a.catchups / Math.max(a.leadSignals, 1)))[0];
+
+  return {
+    bookCount: matching.length,
+    lagRate: Number((totalCatchups / Math.max(totalLeadSignals, 1)).toFixed(6)),
+    averageLagMinutes: Number((weightedLagMinutes / Math.max(totalCatchups, 1)).toFixed(3)),
+    leadSignals: totalLeadSignals,
+    leaderBook: bestLeader?.book ?? null,
+    confidence: clamp(totalLeadSignals / 8, 0, 1),
+  };
 }
 
 function pruneHistory(history, referenceTimestamp) {
@@ -261,6 +404,31 @@ function safeImpliedProbability(price) {
   } catch {
     return 0.5;
   }
+}
+
+function createBookStatsRecord() {
+  return {
+    samples: 0,
+    meanAbsoluteError: 0,
+    stability: 0.5,
+    lastSeenAt: null,
+  };
+}
+
+function applyBookStatsUpdate(record, error, stabilityValue, updatedAt) {
+  record.samples += 1;
+  record.meanAbsoluteError = runningAverage(record.meanAbsoluteError, record.samples, error);
+  record.stability = runningAverage(record.stability, record.samples, stabilityValue);
+  record.lastSeenAt = updatedAt ?? new Date().toISOString();
+}
+
+function calculateMinutesBetween(startAt, endAt) {
+  const start = Date.parse(startAt);
+  const end = Date.parse(endAt);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return 0;
+  }
+  return Math.max(0, Math.round((end - start) / 60000));
 }
 
 function runningAverage(previousAverage, count, nextValue) {
