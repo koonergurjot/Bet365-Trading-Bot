@@ -2,7 +2,7 @@
   "name": "bet365-edge-brain",
   "version": "0.1.0",
   "private": true,
-  "description": "Standalone odds recommendation brain for comparing Bet365 prices against market consensus.",
+  "description": "Bet365 signals engine.",
   "type": "module",
   "scripts": {
     "test": "node tests/run-tests.js",

@@ -1,70 +1,93 @@
 # Roadmap
 
-## Phase 0: Local Brain Scaffold
+The single goal: **a constantly-running signals feed that finds mispriced Bet365 markets accurately enough to be profitable when bet manually.**
 
-- Static app shell.
-- Manual snapshot input.
-- Odds math and recommendation engine.
-- Sample data and tests.
+Each phase below should be evaluated on one question: *does finishing this phase put real, profitable signals on Gurjot's screen?*
+
+## Phase 0: Local Brain Scaffold ✅ DONE
+
+- Static SPA, no build step.
+- Manual JSON snapshot input for testing.
+- Pure odds math (EV, Kelly, vig removal, conversions).
+- Recommendation engine with confidence + risk + portfolio caps.
+- Sample multi-sport data.
+- Test suite for math + engine + history + portfolio guardrails.
 - AI collaboration docs.
 
-Status: started.
+## Phase 1: Live Odds Pipeline ✅ MOSTLY DONE
 
-## Phase 1: Data Provider Proof
+- Adapters for The Odds API, OddsBlaze, TheSportsDB.
+- Live data manager with poll/refresh.
+- Quota + freshness diagnostics in topbar.
 
-- Choose primary and backup odds providers.
-- Build a server-side adapter for each provider.
-- Normalize Bet365 and peer-book markets into `ENGINE_CONTRACT.md`.
-- Add raw snapshot storage.
-- Add provider latency and freshness diagnostics.
+**Remaining:** move provider calls into Cloudflare Workers so API keys leave the browser.
 
-Exit criteria:
+## Phase 2: Stat Scraping Layer 🚧 NEXT (highest leverage)
 
-- Same market can be reconciled across at least five peer books.
-- Snapshot freshness is visible per book.
-- No API secrets are present in browser code.
+The single highest-leverage upgrade. Without scraped stats, the model is just no-vig consensus, which is barely an edge over the books.
 
-## Phase 2: Probability Model Baseline
+- Cloudflare Worker per stat source. Cache aggressively. Respect robots.txt + rate limits.
+- **Soccer first:** FBref + Understat (xG, xGA, form, shot quality, lineup). ESPN for injuries / lineups.
+- **NFL/CFB second:** Pro-Football-Reference (EPA, success rate, opponent-adjusted), ESPN for injuries + weather.
+- **NBA third:** Basketball-Reference (pace, ORtg/DRtg, rest), ESPN for injuries.
+- Output normalized into a per-event `statContext` block on the snapshot (see `docs/STAT_SOURCES.md`).
 
-- Implement no-vig consensus baseline by sport and market type.
-- Add trusted-book weighting.
-- Add closing-line value tracking.
-- Build historical backtest harness.
+**Exit criteria:**
 
-Exit criteria:
+- Every market in priority sports carries a `statContext` block.
+- Scrape latency under 30s end-to-end per sport.
+- Cache hit rate above 80% so we don't hammer source sites.
 
-- Backtests separate by sport, league, market, and odds band.
-- Calibration error is reported.
-- ROI is reported after simulated slippage.
+## Phase 3: Sport-Specific Probability Models
 
-## Phase 3: Risk Layer
+Replace pure no-vig consensus with calibrated, stat-aware models.
 
-- Add exposure limits by event, sport, market, and time window.
-- Add correlation detection.
-- Add bankroll presets and max-loss controls.
-- Add reason codes for blocked recommendations.
+- Soccer: Poisson on xG with home advantage + form weighting.
+- NFL: EPA-derived team strength + opponent-adjusted, weather and injury overlays.
+- NBA: pace × efficiency + rest/back-to-back adjustments + key-player availability.
+- Each model versioned. Output goes through the same `model.probabilities` field already in the engine contract.
 
-Exit criteria:
+**Exit criteria:**
 
-- Engine can explain every accepted and rejected signal.
-- Stake sizing survives stress tests.
+- Each sport's model beats no-vig consensus on out-of-sample backtest CLV.
+- Calibration plot shipped per sport.
 
-## Phase 4: Command Center Integration
+## Phase 4: Backtest + Calibration Harness
 
-- Expose recommendations through JSON endpoint.
-- Add command-center read-only panel.
-- Add audit log for accepted/rejected signals.
-- Add manual approval workflow.
+- Replay historical odds + stat snapshots through the live engine code.
+- Per-sport, per-market, per-odds-band ROI and CLV.
+- Calibration curves and Brier scores.
+- Block model promotion until backtest ROI is positive after slippage.
 
-Exit criteria:
+## Phase 5: Always-On Signal Feed
 
-- Command center does not duplicate betting math.
-- Every recommendation can be traced to a raw source snapshot.
+- Auto-poll every 60–120 seconds during active hours per sport.
+- Push notifications (browser / mobile) when a high-conviction signal appears.
+- Signal expires when Bet365 price moves past threshold.
+- Ranking surface optimized for "open phone → see top 3 → place bets" flow.
 
-## Phase 5: Automation Candidate
+**Exit criteria:**
 
-- Paper-trade only at first.
-- Compare recommended price to executable price.
-- Track slippage, voids, stake acceptance, and account limits.
-- Require manual approval for any real-money execution until the system proves live reliability.
+- Median time from signal-fire → user can place bet < 90 seconds.
+- Stale signals disappear automatically.
+- Signal feed runs unattended.
 
+## Phase 6: Reliability Hardening
+
+- Exposure limits per event / sport / time window.
+- Correlation detection (don't recommend three correlated soccer overs).
+- Reason codes on every accepted *and* rejected signal.
+- Source-freshness gating: kill signals when scrape lag exceeds threshold.
+
+## Phase 7: Audit + Continuous Learning
+
+- Log every emitted signal with full snapshot + stat context.
+- Optional manual outcome feedback (W/L/Void) so model calibration can update — *but* we do not duplicate Bet365's own bet ledger.
+- Compare emitted price vs closing price (CLV) to validate edge over time.
+
+## Out Of Scope (for now)
+
+- Automated bet placement on Bet365.
+- Bet-tracking UI / P&L charts (Bet365 owns this).
+- Sports outside the priority three (Soccer / NFL+CFB / NBA).
+- Trading-command-center integration. Brain stays standalone until profitable.
