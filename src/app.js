@@ -24,6 +24,7 @@ let activeRisk      = "all";
 let sortKey         = "score";
 let isLiveMode      = false;     // true once live data has been loaded
 let pendingTrackedSignal = null;
+let currentVisibleRecommendations = [];
 
 // ── Restore bet tracker from localStorage ────────────────────
 try {
@@ -62,6 +63,12 @@ const els = {
   diagMissingBet365: $("diagMissingBet365"),
   diagNoModel:   $("diagNoModel"),
   diagReasons:   $("diagReasons"),
+  portfolioSummary: $("portfolioSummary"),
+  pPlannedStake: $("pPlannedStake"),
+  pBudgetUsed:   $("pBudgetUsed"),
+  pActiveSignals:$("pActiveSignals"),
+  pReducedStake: $("pReducedStake"),
+  portfolioReasons: $("portfolioReasons"),
   // calculator
   calcOdds:      $("calcOdds"),
   calcProb:      $("calcProb"),
@@ -435,6 +442,7 @@ function runEngine(snapshot) {
     buildSportFilters(report.recommendations);
     renderMetrics(report);
     renderDiagnostics(report);
+    renderPortfolio(report);
     renderSignals();
     updateTopbarStats(report, snapshot);
     return report;
@@ -454,6 +462,47 @@ function renderMetrics(report) {
   els.mAvgConf.textContent    = recs.length > 0 ? pct(avg(recs.map(r => r.confidence))) : "—";
   els.mTotalStake.textContent = recs.length > 0 ? `$${recs.reduce((s,r) => s + r.stakeAmount, 0).toFixed(0)}` : "—";
   els.mAvgQuality.textContent = recs.length > 0 ? pct(avg(recs.map(r => r.dataQuality))) : "—";
+}
+
+function renderPortfolio(report) {
+  const portfolio = report.portfolioSummary;
+  if (!portfolio) return;
+
+  const capPct = pct(portfolio.caps?.maxTotalExposure ?? 0);
+  const plannedPct = pct(portfolio.plannedExposureFraction ?? 0);
+  const topEvent = portfolio.topEventExposures?.[0];
+  const eventPart = topEvent
+    ? ` Top event: ${shortExposureKey(topEvent.key)} at ${pct(topEvent.fraction)}.`
+    : "";
+
+  if (els.portfolioSummary) {
+    els.portfolioSummary.textContent = `${portfolio.activeCount} active, ${portfolio.watchlistCount} watchlist. Planned ${plannedPct} of bankroll vs ${capPct} cap.${eventPart}`;
+  }
+  if (els.pPlannedStake) {
+    els.pPlannedStake.textContent = `$${portfolio.plannedStakeAmount.toFixed(2)}`;
+  }
+  if (els.pBudgetUsed) {
+    els.pBudgetUsed.textContent = plannedPct;
+    els.pBudgetUsed.style.color = portfolio.plannedExposureFraction >= (portfolio.caps?.maxTotalExposure ?? 1) * 0.9
+      ? "var(--amber)"
+      : "var(--green)";
+  }
+  if (els.pActiveSignals) {
+    els.pActiveSignals.textContent = `${portfolio.activeCount}`;
+  }
+  if (els.pReducedStake) {
+    els.pReducedStake.textContent = `$${portfolio.reducedStakeAmount.toFixed(2)}`;
+  }
+  if (els.portfolioReasons) {
+    const chips = [
+      `<span class="pill pill-blue">Total cap ${pct(portfolio.caps.maxTotalExposure)}</span>`,
+      `<span class="pill pill-blue">Event cap ${pct(portfolio.caps.maxEventExposure)}</span>`,
+      `<span class="pill pill-blue">Sport cap ${pct(portfolio.caps.maxSportExposure)}</span>`,
+      portfolio.reducedCount > 0 ? `<span class="pill pill-amber">${portfolio.reducedCount} reduced</span>` : "",
+      portfolio.watchlistCount > 0 ? `<span class="pill pill-gray">${portfolio.watchlistCount} watchlist</span>` : "",
+    ].filter(Boolean);
+    els.portfolioReasons.innerHTML = chips.join("");
+  }
 }
 
 function renderDiagnostics(report) {
@@ -527,6 +576,7 @@ function renderSignals() {
     if (sortKey === "stake")      return b.stakeAmount - a.stakeAmount;
     return b.score - a.score;
   });
+  currentVisibleRecommendations = recs;
 
   els.signalsSummary.textContent = `${recs.length} of ${currentReport.recommendations.length} signals shown`;
 
@@ -547,6 +597,8 @@ function renderSignals() {
     const evPct      = (rec.expectedValue * 100).toFixed(1);
     const evClass    = rec.expectedValue >= 0.08 ? "pill-green" : rec.expectedValue >= 0.03 ? "pill-amber" : "pill-gray";
     const riskClass  = { Low: "pill-green", Medium: "pill-amber", High: "pill-red" }[rec.risk.label] || "pill-gray";
+    const portfolioClass = { active: "pill-green", reduced: "pill-amber", watchlist: "pill-gray" }[rec.portfolio?.status] || "pill-gray";
+    const portfolioLabel = rec.portfolio?.status === "watchlist" ? "Watch" : rec.portfolio?.status === "reduced" ? "Reduced" : "Active";
     const qLevel     = rec.dataQuality >= 0.8 ? "high" : rec.dataQuality >= 0.6 ? "medium" : "low";
     const evBarWidth = Math.min(100, rec.expectedValue * 500);
     const commenceStr = rec.commenceTime
@@ -577,7 +629,8 @@ function renderSignals() {
       </td>
       <td class="right">
         <div class="font-mono font-bold">$${rec.stakeAmount.toFixed(2)}</div>
-        <div class="td-muted">${pct(rec.stakeFraction)} bankroll</div>
+        <div class="td-muted">${pct(rec.stakeFraction)} bankroll${rec.unadjustedStakeAmount > rec.stakeAmount ? ` from $${rec.unadjustedStakeAmount.toFixed(2)}` : ""}</div>
+        <div class="mt-3"><span class="pill ${portfolioClass}">${portfolioLabel}</span></div>
       </td>
       <td class="center"><span class="pill ${riskClass}">${rec.risk.label}</span></td>
       <td class="right">
@@ -588,7 +641,7 @@ function renderSignals() {
         <div class="td-muted">${rec.peerBookCount} peers${rec.staleBookCount > 0 ? `, ${rec.staleBookCount} stale` : ""}</div>
       </td>
       <td class="center">
-        <button class="btn btn-sm btn-green" onclick="window.trackSignal(${idx})" title="Record this bet in Tracker">Track</button>
+        <button class="btn btn-sm ${rec.stakeAmount > 0 ? "btn-green" : "btn-secondary"}" onclick="window.trackSignal(${idx})" title="${rec.stakeAmount > 0 ? "Record this bet in Tracker" : "Portfolio cap reached; review before tracking"}">Track</button>
       </td>
     </tr>`;
   }).join("");
@@ -597,7 +650,7 @@ function renderSignals() {
 // Called from table button
 window.trackSignal = function(recIdx) {
   if (!currentReport) return;
-  const recs = currentReport.recommendations;
+  const recs = currentVisibleRecommendations.length ? currentVisibleRecommendations : currentReport.recommendations;
   const rec  = recs[recIdx < recs.length ? recIdx : 0];
   if (!rec) return;
   pendingTrackedSignal = rec;
@@ -827,12 +880,13 @@ function renderTrackerSummary() {
 function exportSignalsCsv() {
   if (!currentReport?.recommendations?.length) return;
   const rows = [
-    ["Selection","Event","League","Sport","MarketType","Bet365Odds","FairDecimal","ModelProb","EV","Confidence","Stake","RiskLabel","DataQuality","PeerBooks"]
+    ["Selection","Event","League","Sport","MarketType","Bet365Odds","FairDecimal","ModelProb","EV","Confidence","Stake","UnadjustedStake","PortfolioStatus","RiskLabel","DataQuality","PeerBooks"]
   ];
   currentReport.recommendations.forEach((r) => {
     rows.push([r.selection, r.event, r.league, r.sport, r.marketType,
       r.bet365Decimal, r.fairDecimal, r.modelProbability, r.expectedValue,
-      r.confidence, r.stakeAmount, r.risk.label, r.dataQuality, r.peerBookCount]);
+      r.confidence, r.stakeAmount, r.unadjustedStakeAmount ?? r.stakeAmount,
+      r.portfolio?.status ?? "", r.risk.label, r.dataQuality, r.peerBookCount]);
   });
   downloadCsv(rows, "edge-signals.csv");
 }
@@ -913,6 +967,10 @@ function pct(v)        { return `${(v * 100).toFixed(1)}%`; }
 function avg(arr)      { return arr.reduce((s,v) => s+v, 0) / arr.length; }
 function capitalize(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 function prettyReason(code) { return String(code).replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()); }
+function shortExposureKey(key) {
+  const parts = String(key).split("::").filter(Boolean);
+  return parts.length >= 3 ? parts[2] : (parts.at(-1) ?? "Unknown");
+}
 function esc(v)        {
   return String(v)
     .replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")

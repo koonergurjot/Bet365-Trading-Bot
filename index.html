@@ -110,6 +110,38 @@
         </div>
       </div>
 
+      <div class="panel" id="portfolioPanel">
+        <div class="panel-header">
+          <div class="panel-title">&#x1F6E1; Portfolio Guardrails</div>
+          <span class="text-muted" id="portfolioSummary">Waiting for a snapshot</span>
+        </div>
+        <div class="panel-body">
+          <div class="portfolio-grid">
+            <div class="stat-info-card">
+              <div class="stat-info-label">Planned Stake</div>
+              <div class="stat-info-value" id="pPlannedStake">$0.00</div>
+              <div class="stat-info-sub">after exposure caps</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Budget Used</div>
+              <div class="stat-info-value" id="pBudgetUsed">0.0%</div>
+              <div class="stat-info-sub">of bankroll</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Active Signals</div>
+              <div class="stat-info-value" id="pActiveSignals">0</div>
+              <div class="stat-info-sub">with non-zero stake</div>
+            </div>
+            <div class="stat-info-card">
+              <div class="stat-info-label">Stake Trimmed</div>
+              <div class="stat-info-value" id="pReducedStake">$0.00</div>
+              <div class="stat-info-sub">risk budget saved</div>
+            </div>
+          </div>
+          <div class="diagnostic-reasons" id="portfolioReasons"></div>
+        </div>
+      </div>
+
       <div class="filter-bar" id="filterBar">
         <span class="filter-label">Sport</span>
         <div class="filter-chips" id="sportFilters">

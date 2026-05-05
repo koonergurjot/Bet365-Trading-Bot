@@ -300,7 +300,7 @@ export function resetOddsBlaze() {
   console.log("[LiveData] OddsBlaze re-enabled");
 }
 
-function applyBaselineModels(snapshot, historyStore) {
+export function applyBaselineModels(snapshot, historyStore) {
   for (const market of snapshot.markets ?? []) {
     if (market.model?.probabilities?.length && !shouldReplaceBaselineModel(market.model)) {
       continue;
@@ -321,6 +321,7 @@ function applyBaselineModels(snapshot, historyStore) {
     let weightSum = 0;
 
     for (const outcome of referenceBook.outcomes) {
+      const descriptor = normalizeOutcomeDescriptor(market, outcome);
       const comparableOutcomes = collectComparableOutcomes(market, outcome, {
         sourceBook: referenceBook.name,
         staleMinutes: BASELINE_STALE_MINUTES,
@@ -335,7 +336,6 @@ function applyBaselineModels(snapshot, historyStore) {
         market,
         targetDescriptor: descriptor,
       });
-      const descriptor = normalizeOutcomeDescriptor(market, outcome);
       const shape = describeMarketShape(market, outcome, comparableOutcomes);
 
       normalizedProbabilities.push({

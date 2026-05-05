@@ -19,6 +19,9 @@ const DEFAULT_CONFIG = {
   minExpectedValue: 0.03,
   minConfidence: 0.55,
   maxBankrollStake: 0.02,
+  maxTotalExposure: 0.06,
+  maxEventExposure: 0.025,
+  maxSportExposure: 0.04,
   fractionalKelly: 0.25,
   staleMinutes: 8,
   dynamicThresholds: true,
@@ -35,6 +38,7 @@ export function analyzeSnapshot(snapshot, config = {}) {
     .filter((entry) => entry.accepted && entry.recommendation)
     .map((entry) => entry.recommendation)
     .sort((a, b) => b.score - a.score);
+  const portfolioSummary = applyPortfolioGuardrails(recommendations, settings);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -43,8 +47,9 @@ export function analyzeSnapshot(snapshot, config = {}) {
     totalMarkets: snapshot.markets.length,
     totalCandidates: evaluations.filter((entry) => entry.recommendation).length,
     recommendations,
+    portfolioSummary,
     learningSummary: settings.adaptiveLearning?.summary ?? null,
-    diagnostics: buildDiagnostics(snapshot.markets, evaluations, crossMarketSummary),
+    diagnostics: buildDiagnostics(snapshot.markets, evaluations, crossMarketSummary, portfolioSummary),
   };
 }
 
@@ -407,7 +412,122 @@ function buildRecommendationScore({ ev, confidence, dataQuality, history, market
   return ev * 100 + confidence * 10 + dataQuality * 6 + lagBoost + persistenceBoost + lineBoost + leadLagBoost + learningBoost - risk.penalty - snapbackPenalty;
 }
 
-function buildDiagnostics(markets, evaluations, crossMarketSummary) {
+function applyPortfolioGuardrails(recommendations, settings) {
+  const bankroll = Number(settings.bankroll ?? DEFAULT_CONFIG.bankroll);
+  const caps = {
+    maxTotalExposure: resolveExposureCap(settings.maxTotalExposure, DEFAULT_CONFIG.maxTotalExposure),
+    maxEventExposure: resolveExposureCap(settings.maxEventExposure, DEFAULT_CONFIG.maxEventExposure),
+    maxSportExposure: resolveExposureCap(settings.maxSportExposure, DEFAULT_CONFIG.maxSportExposure),
+  };
+  const eventExposure = new Map();
+  const sportExposure = new Map();
+  let totalExposure = 0;
+  let desiredExposure = 0;
+  let reducedCount = 0;
+  let excludedCount = 0;
+
+  for (const recommendation of recommendations) {
+    const desired = clamp(Number(recommendation.stakeFraction ?? 0), 0, Number(settings.maxBankrollStake ?? DEFAULT_CONFIG.maxBankrollStake));
+    const eventKey = buildPortfolioEventKey(recommendation);
+    const sportKey = String(recommendation.sport ?? "unknown");
+    const remaining = {
+      total: Math.max(0, caps.maxTotalExposure - totalExposure),
+      event: Math.max(0, caps.maxEventExposure - (eventExposure.get(eventKey) ?? 0)),
+      sport: Math.max(0, caps.maxSportExposure - (sportExposure.get(sportKey) ?? 0)),
+    };
+    const adjusted = clamp(Math.min(desired, remaining.total, remaining.event, remaining.sport), 0, desired);
+    const capReasons = [];
+
+    desiredExposure += desired;
+    if (adjusted < desired - 0.000001) {
+      reducedCount += adjusted > 0 ? 1 : 0;
+      excludedCount += adjusted > 0 ? 0 : 1;
+      if (remaining.total <= adjusted + 0.000001) capReasons.push("total exposure cap");
+      if (remaining.event <= adjusted + 0.000001) capReasons.push("event exposure cap");
+      if (remaining.sport <= adjusted + 0.000001) capReasons.push("sport exposure cap");
+    }
+
+    totalExposure += adjusted;
+    eventExposure.set(eventKey, (eventExposure.get(eventKey) ?? 0) + adjusted);
+    sportExposure.set(sportKey, (sportExposure.get(sportKey) ?? 0) + adjusted);
+
+    recommendation.unadjustedStakeFraction = Number(desired.toFixed(6));
+    recommendation.unadjustedStakeAmount = roundCurrency(bankroll * desired);
+    recommendation.stakeFraction = Number(adjusted.toFixed(6));
+    recommendation.stakeAmount = roundCurrency(bankroll * adjusted);
+    recommendation.portfolio = {
+      status: adjusted <= 0 && desired > 0
+        ? "watchlist"
+        : adjusted < desired
+          ? "reduced"
+          : "active",
+      capReasons,
+      desiredStakeFraction: Number(desired.toFixed(6)),
+      desiredStakeAmount: roundCurrency(bankroll * desired),
+      adjustedStakeFraction: Number(adjusted.toFixed(6)),
+      adjustedStakeAmount: roundCurrency(bankroll * adjusted),
+      eventExposureFraction: Number((eventExposure.get(eventKey) ?? 0).toFixed(6)),
+      sportExposureFraction: Number((sportExposure.get(sportKey) ?? 0).toFixed(6)),
+      totalExposureFraction: Number(totalExposure.toFixed(6)),
+    };
+
+    if (recommendation.portfolio.status === "reduced") {
+      recommendation.notes.push("portfolio stake reduced");
+    } else if (recommendation.portfolio.status === "watchlist") {
+      recommendation.notes.push("portfolio cap reached");
+    }
+  }
+
+  return {
+    bankroll,
+    caps,
+    desiredExposureFraction: Number(desiredExposure.toFixed(6)),
+    plannedExposureFraction: Number(totalExposure.toFixed(6)),
+    desiredStakeAmount: roundCurrency(bankroll * desiredExposure),
+    plannedStakeAmount: roundCurrency(bankroll * totalExposure),
+    reducedStakeAmount: roundCurrency(bankroll * Math.max(0, desiredExposure - totalExposure)),
+    activeCount: recommendations.filter((entry) => entry.portfolio?.status === "active" || entry.portfolio?.status === "reduced").length,
+    reducedCount,
+    watchlistCount: excludedCount,
+    topEventExposures: topExposureEntries(eventExposure, bankroll),
+    topSportExposures: topExposureEntries(sportExposure, bankroll),
+  };
+}
+
+function resolveExposureCap(value, fallback) {
+  const cap = Number(value);
+  if (!Number.isFinite(cap) || cap <= 0) {
+    return fallback;
+  }
+  return clamp(cap, 0.001, 1);
+}
+
+function topExposureEntries(map, bankroll) {
+  return [...map.entries()]
+    .filter(([, fraction]) => fraction > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([key, fraction]) => ({
+      key,
+      fraction: Number(fraction.toFixed(6)),
+      amount: roundCurrency(bankroll * fraction),
+    }));
+}
+
+function buildPortfolioEventKey(recommendation) {
+  return [
+    recommendation.sport ?? "",
+    recommendation.league ?? "",
+    recommendation.event ?? "",
+    recommendation.commenceTime ? String(recommendation.commenceTime).slice(0, 16) : "",
+  ].join("::");
+}
+
+function roundCurrency(value) {
+  return Number(Number(value || 0).toFixed(2));
+}
+
+function buildDiagnostics(markets, evaluations, crossMarketSummary, portfolioSummary) {
   const reasonCounts = countCodes(evaluations.flatMap((entry) => entry.reasonCodes));
   const warningCounts = countCodes(evaluations.flatMap((entry) => entry.warningCodes));
 
@@ -420,6 +540,8 @@ function buildDiagnostics(markets, evaluations, crossMarketSummary) {
     confirmedSelections: crossMarketSummary?.confirmedSelections ?? 0,
     conflictingSelections: crossMarketSummary?.conflictingSelections ?? 0,
     inconsistentEvents: crossMarketSummary?.inconsistentEvents ?? 0,
+    portfolioReducedSelections: portfolioSummary?.reducedCount ?? 0,
+    portfolioWatchlistSelections: portfolioSummary?.watchlistCount ?? 0,
     reasonCounts,
     warningCounts,
     topReasons: Object.entries(reasonCounts)

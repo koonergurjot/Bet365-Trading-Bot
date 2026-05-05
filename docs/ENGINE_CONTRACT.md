@@ -66,12 +66,22 @@ The engine returns recommendations shaped for UI and future command-center integ
   "expectedValue": 0.0628,
   "stakeFraction": 0.02,
   "stakeAmount": 20,
+  "unadjustedStakeFraction": 0.02,
+  "unadjustedStakeAmount": 20,
+  "portfolio": {
+    "status": "active",
+    "capReasons": [],
+    "desiredStakeFraction": 0.02,
+    "adjustedStakeFraction": 0.02
+  },
   "confidence": 0.72,
   "dataQuality": 0.88,
   "risk": { "label": "Low", "penalty": 2 },
   "notes": []
 }
 ```
+
+`stakeFraction` and `stakeAmount` are the portfolio-adjusted recommendation. Use `unadjustedStakeFraction` / `unadjustedStakeAmount` to inspect the raw Kelly-sized stake before total, sport, and event exposure caps.
 
 ## Required Future Additions
 
@@ -82,4 +92,3 @@ The engine returns recommendations shaped for UI and future command-center integ
 - Provider raw snapshot ID.
 - Liquidity or exchange volume when available.
 - Whether market is live, pre-match, suspended, or settled.
-

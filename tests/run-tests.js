@@ -25,6 +25,7 @@ import {
   createMarketHistoryStore,
   ingestSnapshotHistory,
 } from "../src/engine/marketHistory.js";
+import { applyBaselineModels } from "../src/data/liveDataManager.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sample = JSON.parse(readFileSync(join(__dirname, "../src/data/sample-markets.json"), "utf8"));
@@ -92,6 +93,24 @@ const tests = [
 
     assert.equal(report.recommendations.length, 0);
   }],
+  ["applies portfolio exposure caps after ranking signals", () => {
+    const report = analyzeSnapshot(sample, {
+      bankroll: 1000,
+      minExpectedValue: 0,
+      minConfidence: 0,
+      maxBankrollStake: 0.02,
+      maxTotalExposure: 0.01,
+      maxEventExposure: 0.01,
+      maxSportExposure: 0.01,
+      dynamicThresholds: false,
+    });
+
+    assert.ok(report.recommendations.length > 0);
+    assert.ok(report.portfolioSummary, "Expected portfolio summary");
+    assert.ok(report.portfolioSummary.plannedExposureFraction <= 0.010001);
+    assert.ok(report.portfolioSummary.desiredExposureFraction >= report.portfolioSummary.plannedExposureFraction);
+    assert.ok(report.recommendations.some((entry) => entry.unadjustedStakeAmount >= entry.stakeAmount));
+  }],
   ["reports diagnostics for blocked selections", () => {
     const report = analyzeSnapshot(sample, {
       bankroll: 1000,
@@ -136,6 +155,57 @@ const tests = [
     assert.equal(report.recommendations.length, 0);
     assert.equal(report.diagnostics.marketsMissingBet365, 1);
     assert.equal(report.diagnostics.reasonCounts.missing_bet365, 1);
+  }],
+  ["builds baseline live models without descriptor ordering errors", () => {
+    const snapshot = {
+      snapshotAt: "2026-05-03T16:30:00.000Z",
+      markets: [
+        {
+          id: "baseline-model-market",
+          sport: "basketball",
+          league: "NBA",
+          event: "Home vs Away",
+          homeTeam: "Home",
+          awayTeam: "Away",
+          commenceTime: "2026-05-04T18:00:00.000Z",
+          snapshotAt: "2026-05-03T16:30:00.000Z",
+          marketType: "moneyline",
+          settlementRules: "Official result including overtime.",
+          books: [
+            {
+              name: "Bet365",
+              updatedAt: "2026-05-03T16:29:50.000Z",
+              outcomes: [
+                { name: "Home", price: 2.05 },
+                { name: "Away", price: 1.8 },
+              ],
+            },
+            {
+              name: "Pinnacle",
+              updatedAt: "2026-05-03T16:29:10.000Z",
+              outcomes: [
+                { name: "Home", price: 1.92 },
+                { name: "Away", price: 1.95 },
+              ],
+            },
+            {
+              name: "DraftKings",
+              updatedAt: "2026-05-03T16:28:50.000Z",
+              outcomes: [
+                { name: "Home", price: 1.9 },
+                { name: "Away", price: 1.98 },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    applyBaselineModels(snapshot, createMarketHistoryStore());
+
+    assert.equal(snapshot.markets[0].model.version, "baseline-weighted-consensus-v2");
+    assert.equal(snapshot.markets[0].model.probabilities.length, 2);
+    assert.ok(snapshot.markets[0].model.confidence > 0.5);
   }],
   ["matches spread positions across team aliases and nearby lines", () => {
     const report = analyzeSnapshot({

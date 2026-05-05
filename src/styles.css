@@ -600,6 +600,12 @@ textarea {
   gap: 12px;
 }
 
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
 .diagnostic-reasons {
   display: flex;
   flex-wrap: wrap;
