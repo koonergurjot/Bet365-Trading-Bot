@@ -13,6 +13,7 @@ import {
 } from "./marketNormalizer.js";
 import { applyCrossMarketContext } from "./crossMarketAnalyzer.js";
 import { resolveAdaptiveLearningProfile } from "./feedbackStore.js";
+import { attachResearchEvidence } from "./reliabilityGate.js";
 
 const DEFAULT_CONFIG = {
   bankroll: 1000,
@@ -39,8 +40,11 @@ export function analyzeSnapshot(snapshot, config = {}) {
     .map((entry) => entry.recommendation)
     .sort((a, b) => b.score - a.score);
   const portfolioSummary = applyPortfolioGuardrails(recommendations, settings);
+  const actionableRecommendations = attachResearchEvidence(snapshot, recommendations, settings);
 
   return {
+    actionableRecommendations,
+    actionableCount: actionableRecommendations.length,
     generatedAt: new Date().toISOString(),
     sourceSnapshotAt: snapshot.snapshotAt,
     settings,
@@ -60,7 +64,7 @@ export function analyzeMarket(market, settings = DEFAULT_CONFIG) {
 }
 
 function evaluateMarket(market, settings) {
-  const bet365Book = (market.books ?? []).find((book) => normalizeBookName(book.name) === "bet365");
+  const bet365Book = (market.books ?? []).find((book) => normalizeBookName(book.name) === normalizeBookName(settings.targetBook ?? "Bet365"));
   if (!bet365Book) {
     return [{
       accepted: false,
@@ -171,7 +175,7 @@ function evaluateMarket(market, settings) {
 
 function collectPeerOutcomes(market, targetOutcome, settings) {
   return collectComparableOutcomes(market, targetOutcome, {
-    sourceBook: "bet365",
+    sourceBook: normalizeBookName(settings.targetBook ?? "Bet365"),
     staleMinutes: settings.staleMinutes,
   });
 }
@@ -189,6 +193,10 @@ function buildConsensus(peerOutcomes, market, descriptor) {
 }
 
 function chooseModelProbability(market, descriptor, consensusProbability) {
+  // A consensus baseline is not an independent estimate: use destination-excluded peers.
+  if (String(market.model?.version ?? "").startsWith("baseline-") || /^(weighted-consensus|consensus-fallback)/.test(market.model?.version ?? "")) {
+    return clamp(consensusProbability, 0.001, 0.999);
+  }
   const modelPick = market.model?.probabilities?.find((entry) => {
     if (entry.canonicalKey && entry.canonicalKey === descriptor.selectionKey) {
       return true;

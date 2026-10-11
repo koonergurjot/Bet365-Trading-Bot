@@ -4,6 +4,7 @@
  * Live data wired: The Odds API + OddsBlaze + TheSportsDB
  */
 import { analyzeSnapshot } from "./engine/recommendationEngine.js";
+import { attachResearchEvidence } from "./engine/reliabilityGate.js";
 import {
   decimalToImpliedProbability,
   americanToDecimal,
@@ -202,6 +203,8 @@ function bindEvents() {
   });
 
   // ── Live data ─────────────────────────────────────────────
+  $("btnCheckConnections").addEventListener("click", checkConnections);
+  $("targetBookSelect").addEventListener("change", () => { if (currentSnapshot) runEngine(currentSnapshot); });
   els.btnFetchLive.addEventListener("click",   fetchAndRunLive);
   els.btnFetchLive2.addEventListener("click",  fetchAndRunLive);
   els.btnTogglePoll.addEventListener("click",  togglePolling);
@@ -219,17 +222,33 @@ function switchTab(tab) {
   });
 }
 
-async function boot() {
-  const cachedSnapshot = liveData.restoreCachedSnapshot();
-  if (cachedSnapshot) {
-    isLiveMode = true;
-    els.snapshotEditor.value = JSON.stringify(cachedSnapshot, null, 2);
-    runEngine(cachedSnapshot);
-    showToast("Loaded cached snapshot from local storage", "info");
-  } else {
-    await loadSample();
+async function checkConnections() {
+  const label = $("connectionStatus");
+  label.textContent = "Checking server-side connection readiness…";
+  try {
+    const response = await fetch("/api/status", { cache:"no-store" });
+    if (!response.ok) throw new Error("Backend unavailable");
+    const status = await response.json();
+    const providers = status.providers && typeof status.providers === "object" ? Object.values(status.providers) : [];
+    const configured = providers.some(provider => provider?.configured === true);
+    label.textContent = configured
+      ? "Provider configured · quote coverage and eligibility not verified"
+      : "Disconnected · configure a provider in server-side secrets, then check connections";
+  } catch {
+    label.textContent = "Disconnected · /api/status unavailable. Start the local backend or deploy the same-origin Worker; configure server-side secrets.";
   }
+}
+
+async function boot() {
+  // Research starts empty. Loading a demonstration is always an explicit choice.
+  $("researchStatus").textContent = "Research workspace · Not validated";
   updateLiveStatus();
+  await checkConnections();
+  // Local clock-only expiry refresh; never fetch provider odds on a timer.
+  setInterval(() => {
+    updateLiveStatus();
+    if (currentReport) { renderSignals(); renderMetrics(currentReport); renderPortfolio(currentReport); }
+  }, 30000);
 }
 
 // ── Sample data ──────────────────────────────────────────────
@@ -249,8 +268,8 @@ async function loadSample() {
 // ── Live data fetch ───────────────────────────────────────────
 function applyLiveSnapshot(snapshot, { switchToSignals = false, notify = true } = {}) {
   els.snapshotEditor.value = JSON.stringify(snapshot, null, 2);
-  const report = runEngine(snapshot);
   isLiveMode = true;
+  const report = runEngine(snapshot);
   updateLiveStatus();
   if (switchToSignals) {
     switchTab("signals");
@@ -267,12 +286,14 @@ async function fetchAndRunLive() {
   showToast("Fetching live odds across all sports...", "info");
 
   try {
-    const snapshot = await liveData.fetchLiveSnapshot();
+    const snapshot = await liveData.fetchLiveSnapshot({ manual: true });
     applyLiveSnapshot(snapshot, { switchToSignals: true });
 
     const status = liveData.getFullStatus();
     showToast(
-      `Live data loaded: ${snapshot.markets.length} markets, ${status.quota.remaining ?? "?"} requests left`,
+      snapshot.totalEvents === 0
+        ? "Provider request completed: no events returned. No quotes or actionable research available."
+        : `Research data loaded: ${snapshot.markets.length} markets, ${status.quota.remaining ?? "?"} requests left; coverage and model validation not verified`,
       "success"
     );
   } catch (err) {
@@ -293,29 +314,20 @@ async function fetchAndRunLive() {
 }
 
 function togglePolling() {
-  if (liveData.isPolling()) {
-    liveData.stopPolling();
-    showToast("Auto-refresh stopped", "info");
-  } else {
-    const status = liveData.getFullStatus();
-    liveData.startPolling(
-      (snapshot) => {
-        applyLiveSnapshot(snapshot);
-        showToast(`Auto-refreshed: ${snapshot.markets.length} markets`, "info");
-      },
-      undefined,
-      (safety) => {
-        showToast(safety.message, safety.level === "warn" ? "info" : "error");
-      }
-    );
-    showToast(`Auto-refresh started (${status.pollingIntervalLabel})`, "success");
-  }
+  liveData.stopPolling();
+  showToast("Automatic odds refresh is disabled. Use a manual fetch to protect the free-tier budget.", "info");
   updateLiveStatus();
 }
 
 function updateLiveStatus() {
   const status = liveData.getFullStatus();
   const polling = status.isPolling;
+  const demo = currentSnapshot?.provider === "manual-sample";
+  $("researchStatus").textContent = demo ? "Demo · non-actionable · not validated" : currentSnapshot ? "Research snapshot · Not validated" : "Research workspace · Not validated";
+  const captured = Date.parse(currentSnapshot?.snapshotAt ?? "");
+  const minutes = (Date.now() - captured) / 60000;
+  $("freshnessStatus").textContent = !currentSnapshot ? "No snapshot loaded. No-bet until evidence is verified." : !Number.isFinite(minutes) || minutes < 0 ? "Unknown / invalid timestamp · No bet; verify quote timestamps." : `${minutes > 8 ? "Stale snapshot · No bet" : "Snapshot captured recently · verify every quote"} · ${Math.floor(minutes)} minutes old. ${demo ? "Demo prices are not live." : "Provider fetch time is not necessarily quote time."}`;
+  if (els.sampleDisclaimer) els.sampleDisclaimer.textContent = demo ? "DEMO ONLY · Historical example prices. All results are paper-only, non-actionable and not validated." : "No live source loaded. Imported snapshots are research only; verify provenance, freshness, settlement and eligibility.";
 
   if (els.statQuota) {
     els.statQuota.textContent = status.quota.remaining !== null
@@ -343,12 +355,13 @@ function updateLiveStatus() {
     els.chipLiveStatus.className = "stat-chip live-off";
   }
 
-  const pollLabel = polling ? "Auto ON" : "Auto";
   [els.btnTogglePoll, els.btnTogglePoll2].forEach((b) => {
     if (!b) return;
-    b.textContent = pollLabel;
-    b.classList.toggle("btn-green", polling);
-    b.classList.toggle("btn-secondary", !polling);
+    b.textContent = "Manual only";
+    b.disabled = true;
+    b.title = "Automatic odds refresh is disabled to protect the free-tier budget.";
+    b.classList.toggle("btn-green", false);
+    b.classList.toggle("btn-secondary", true);
   });
 
   if (isLiveMode) {
@@ -380,7 +393,7 @@ function updateLiveStatus() {
     els.dataStatPolling.title = `Default cadence: ${status.pollingIntervalLabel}`;
   }
   if (els.dataStatSource) {
-    els.dataStatSource.textContent = isLiveMode ? (status.isCached ? "Cached" : "Live") : "Sample";
+    els.dataStatSource.textContent = isLiveMode ? (status.isCached ? "Cached" : "Fetched") : currentSnapshot?.provider === "manual-sample" ? "Demo" : currentSnapshot ? "Imported" : "None";
   }
   if (els.dataStatFetchesLeft) {
     els.dataStatFetchesLeft.textContent = status.quota.estFetchesLeft ?? "-";
@@ -407,7 +420,9 @@ function showToast(message, type = "info") {
 function runEngineFromEditor() {
   try {
     const snapshot = JSON.parse(els.snapshotEditor.value);
+    isLiveMode = false; // Editor imports have unverified provenance.
     runEngine(snapshot);
+    updateLiveStatus();
     switchTab("signals");
   } catch (err) {
     els.signalsSummary.textContent = `JSON error: ${err.message}`;
@@ -418,6 +433,7 @@ function readEngineConfig() {
   // Derive bankroll from topbar bankroll display (or default)
   const banStr = els.statBankroll.textContent.replace(/[^0-9.]/g, "");
   const baseConfig = {
+    targetBook: $("targetBookSelect")?.value || "PlayNow",
     bankroll: parseFloat(banStr) || 1000,
     minExpectedValue: 0.03,
     minConfidence:    0.55,
@@ -459,13 +475,15 @@ function renderMetrics(report) {
   els.mMarkets.textContent    = report.totalMarkets;
   els.mCandidates.textContent = report.totalCandidates;
   els.mTopEv.textContent      = recs.length > 0 ? `+${pct(recs[0].expectedValue)}` : "—";
-  els.mAvgConf.textContent    = recs.length > 0 ? pct(avg(recs.map(r => r.confidence))) : "—";
-  els.mTotalStake.textContent = recs.length > 0 ? `$${recs.reduce((s,r) => s + r.stakeAmount, 0).toFixed(0)}` : "—";
+  els.mAvgConf.textContent    = recs.length > 0 ? `${numberText(avg(recs.map(researchScore)),0)}/100` : "—";
+  els.mTotalStake.textContent = `$${recs.reduce((s,r) => s + researchActionAmount(r), 0).toFixed(0)}`;
   els.mAvgQuality.textContent = recs.length > 0 ? pct(avg(recs.map(r => r.dataQuality))) : "—";
 }
 
 function renderPortfolio(report) {
-  const portfolio = report.portfolioSummary;
+  const raw = report.portfolioSummary;
+  const actionAmount = report.recommendations.reduce((sum,rec) => sum + researchActionAmount(rec),0);
+  const portfolio = raw ? { ...raw, activeCount:report.recommendations.filter(rec => researchActionAmount(rec)>0).length, plannedStakeAmount:actionAmount, plannedExposureFraction:actionAmount / readEngineConfig().bankroll } : null;
   if (!portfolio) return;
 
   const capPct = pct(portfolio.caps?.maxTotalExposure ?? 0);
@@ -558,94 +576,74 @@ function buildSportFilters(recs) {
 // ── Render signals ────────────────────────────────────────────
 function renderSignals() {
   if (!currentReport) return;
-
   let recs = [...currentReport.recommendations];
-
-  // Sport filter
-  if (activeSport !== "all") {
-    recs = recs.filter(r => r.sport === activeSport);
-  }
-  // Risk filter
-  if (activeRisk !== "all") {
-    recs = recs.filter(r => r.risk.label === activeRisk);
-  }
-  // Sort
-  recs.sort((a, b) => {
-    if (sortKey === "ev")         return b.expectedValue - a.expectedValue;
-    if (sortKey === "confidence") return b.confidence - a.confidence;
-    if (sortKey === "stake")      return b.stakeAmount - a.stakeAmount;
-    return b.score - a.score;
-  });
+  if (activeSport !== "all") recs = recs.filter(r => r.sport === activeSport);
+  if (activeRisk !== "all") recs = recs.filter(r => r.risk?.label === activeRisk);
+  recs.sort((a,b) => sortKey === "ev" ? b.expectedValue-a.expectedValue : sortKey === "confidence" ? b.confidence-a.confidence : sortKey === "stake" ? researchActionAmount(b)-researchActionAmount(a) : researchScore(b)-researchScore(a));
   currentVisibleRecommendations = recs;
-
-  els.signalsSummary.textContent = `${recs.length} of ${currentReport.recommendations.length} signals shown`;
-
-  if (recs.length === 0) {
-    const topReason = currentReport.diagnostics?.topReasons?.[0];
-    els.signalsBody.innerHTML = `
-      <tr><td colspan="8">
-        <div class="empty-state">
-          <div class="empty-icon">🔍</div>
-          <div class="empty-title">No signals match your filters</div>
-          <div class="empty-sub">${topReason ? `Most common blocker: ${esc(prettyReason(topReason.code))}` : "Try relaxing the sport or risk filters"}</div>
-        </div>
-      </td></tr>`;
+  els.signalsSummary.textContent = `${recs.length} research candidates · ${recs.filter(r => researchActionAmount(r) > 0).length} cleared for manual review`;
+  if (!recs.length) {
+    const reason = currentReport.diagnostics?.topReasons?.[0];
+    const emptyMessage = currentSnapshot?.provider === "manual-sample" && $("targetBookSelect")?.value !== "Bet365"
+      ? "The bundled demo contains Bet365 quotes, not the selected Canadian book. Select Bet365 to inspect this non-actionable example. No live coverage is implied."
+      : currentSnapshot?.totalEvents === 0 ? "Provider request completed: no events returned. No quotes are available; this is not verified destination coverage."
+      : reason?.code === "missing_bet365" ? `${$("targetBookSelect")?.value || "Selected book"} quotes unavailable in this snapshot. No other book's prices are substituted; live coverage remains unverified.`
+      : reason ? prettyReason(reason.code) : "No candidates passed this screen. Check quote coverage, timestamps, or reset filters. Do not lower safety gates to force a pick.";
+    els.signalsBody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">◎</div><div class="empty-title">No-bet is a valid research result</div><div class="empty-sub">${esc(emptyMessage)}</div></div></td></tr>`;
     return;
   }
-
-  els.signalsBody.innerHTML = recs.map((rec, idx) => {
-    const evPct      = (rec.expectedValue * 100).toFixed(1);
-    const evClass    = rec.expectedValue >= 0.08 ? "pill-green" : rec.expectedValue >= 0.03 ? "pill-amber" : "pill-gray";
-    const riskClass  = { Low: "pill-green", Medium: "pill-amber", High: "pill-red" }[rec.risk.label] || "pill-gray";
-    const portfolioClass = { active: "pill-green", reduced: "pill-amber", watchlist: "pill-gray" }[rec.portfolio?.status] || "pill-gray";
-    const portfolioLabel = rec.portfolio?.status === "watchlist" ? "Watch" : rec.portfolio?.status === "reduced" ? "Reduced" : "Active";
-    const qLevel     = rec.dataQuality >= 0.8 ? "high" : rec.dataQuality >= 0.6 ? "medium" : "low";
-    const evBarWidth = Math.min(100, rec.expectedValue * 500);
-    const commenceStr = rec.commenceTime
-      ? new Date(rec.commenceTime).toLocaleString(undefined, { weekday:"short", month:"short", day:"numeric", hour:"2-digit", minute:"2-digit" })
-      : "";
-
-    return `
-    <tr data-rec-idx="${idx}">
-      <td>
-        <div class="td-primary">${esc(rec.selection)}</div>
-        <div class="td-secondary">${sportEmoji(rec.sport)} ${esc(rec.event)}</div>
-        <div class="td-muted">${esc(rec.league)} · ${esc(rec.marketType)}${commenceStr ? ` · ${commenceStr}` : ""}</div>
-        ${rec.notes.length ? `<div class="td-muted" style="color:var(--amber)">${rec.notes.map(esc).join(", ")}</div>` : ""}
-      </td>
-      <td class="right">
-        <div class="font-mono font-bold">${rec.bet365Decimal.toFixed(2)}</div>
-        <div class="td-muted">${pct(rec.bet365ImpliedProbability)} implied</div>
-      </td>
-      <td class="right">
-        <div class="font-mono font-bold">${rec.fairDecimal.toFixed(2)}</div>
-        <div class="td-muted">${pct(rec.modelProbability)} model</div>
-      </td>
-      <td class="right">
-        <div class="ev-bar-wrap" style="justify-content:flex-end">
-          <div class="ev-bar"><div class="ev-bar-fill" style="width:${evBarWidth}%"></div></div>
-          <span class="pill ${evClass}">+${evPct}%</span>
+  els.signalsBody.innerHTML = recs.map((rec,idx) => {
+    const evidence = rec.evidence ?? {};
+    const offered = rec.offeredDecimal ?? rec.bet365Decimal;
+    const probability = evidence.modelProbability ?? rec.modelProbability;
+    const consensus = evidence.consensusProbability ?? rec.consensusProbability;
+    const source = evidence.modelSource ?? rec.modelSource ?? "unknown";
+    const score = researchScore(rec);
+    const amount = researchActionAmount(rec);
+    const blocked = amount === 0;
+    const reasons = rec.blockReasons?.length ? rec.blockReasons.map(prettyReason).join(" · ") : blocked ? "Validation / eligibility not established" : "Recheck the price and eligibility before any manual decision";
+    const peers = Array.isArray(evidence.peers) ? evidence.peers : [];
+    const peerRows = peers.map(peer => `<li><strong>${esc(peer.book ?? "Unknown book")}</strong> · decimal ${numberText(peer.decimal)} · no-vig ${probabilityText(peer.noVigProbability)} · ${esc(peer.updatedAt ?? "Timestamp missing")}</li>`).join("");
+    const components = evidence.scoreComponents && typeof evidence.scoreComponents === "object" ? Object.entries(evidence.scoreComponents).map(([key,value]) => `${esc(prettyReason(key))}: ${esc(Number.isFinite(value) ? value.toFixed(1) : typeof value === "object" ? JSON.stringify(value) : value)}`).join(" · ") : "Legacy heuristic; score components unavailable";
+    return `<tr data-rec-idx="${idx}" class="research-row"><td colspan="8">
+      <article class="research-card" aria-label="Research candidate ${idx+1}">
+        <div class="candidate-heading"><div><div class="eyebrow">${esc(rec.sport ?? "Sport unknown")} / ${esc(rec.league ?? "League unknown")}</div><h3>${esc(rec.selection)}</h3><p>${esc(rec.event)} · ${esc(rec.marketType)}</p></div><span class="pill ${blocked ? "pill-amber" : "pill-blue"}">${blocked ? "Paper only · No bet" : "Manual review only"}</span></div>
+        <div class="candidate-metrics">
+          <div><span>Research score</span><strong>${Number.isFinite(score) ? Math.round(score)+"/100" : "—"}</strong><small>Heuristic, not chance of winning</small></div>
+          <div><span>${esc(rec.targetBook ?? "Offered book")} quote</span><strong>${numberText(offered)}</strong><small>${probabilityText(evidence.impliedProbability ?? rec.bet365ImpliedProbability)} implied</small></div>
+          <div><span>Estimated probability</span><strong>${probabilityText(probability)}</strong><small>${source.includes("consensus") ? "Peer-consensus estimate" : "Model estimate · uncalibrated unless proven"}</small></div>
+          <div><span>Estimated EV</span><strong>${Number.isFinite(rec.expectedValue) ? (rec.expectedValue >= 0 ? "+" : "")+pct(rec.expectedValue) : "—"}</strong><small>Depends on probability estimate</small></div>
+          <div><span>Action amount</span><strong>$${amount.toFixed(2)}</strong><small>${blocked ? "No real stake suggested" : "Not an instruction to bet"}</small></div>
         </div>
-      </td>
-      <td class="right">
-        <div class="font-mono font-bold">$${rec.stakeAmount.toFixed(2)}</div>
-        <div class="td-muted">${pct(rec.stakeFraction)} bankroll${rec.unadjustedStakeAmount > rec.stakeAmount ? ` from $${rec.unadjustedStakeAmount.toFixed(2)}` : ""}</div>
-        <div class="mt-3"><span class="pill ${portfolioClass}">${portfolioLabel}</span></div>
-      </td>
-      <td class="center"><span class="pill ${riskClass}">${rec.risk.label}</span></td>
-      <td class="right">
-        <div class="quality-bar-wrap" style="justify-content:flex-end">
-          <div class="quality-bar"><div class="quality-bar-fill ${qLevel}" style="width:${(rec.dataQuality*100).toFixed(0)}%"></div></div>
-          <span>${pct(rec.dataQuality)}</span>
-        </div>
-        <div class="td-muted">${rec.peerBookCount} peers${rec.staleBookCount > 0 ? `, ${rec.staleBookCount} stale` : ""}</div>
-      </td>
-      <td class="center">
-        <button class="btn btn-sm ${rec.stakeAmount > 0 ? "btn-green" : "btn-secondary"}" onclick="window.trackSignal(${idx})" title="${rec.stakeAmount > 0 ? "Record this bet in Tracker" : "Portfolio cap reached; review before tracking"}">Track</button>
-      </td>
-    </tr>`;
+        <div class="candidate-warning">${esc(reasons)}${rec.staleBookCount ? ` · ${esc(rec.staleBookCount)} stale peers` : ""}</div>
+        <details class="evidence-disclosure"><summary>Inspect evidence &amp; assumptions</summary><div class="evidence-content">
+          <p><strong>Peer consensus vs model:</strong> No-vig consensus ${probabilityText(consensus)}; estimate ${probabilityText(probability)}. Source: ${esc(source)}. Consensus is a market reference, not an independently validated prediction.</p>
+          <p><strong>EV formula:</strong> <code>p * decimal - 1</code>, where p is estimated probability as a fraction. ${numberText(probability,3)} × ${numberText(offered)} − 1. Positive estimated EV does not demonstrate predictive accuracy or guarantee profit.</p>
+          <p><strong>Validation:</strong> ${esc(typeof evidence.validationStatus === "string" ? evidence.validationStatus : "Not established; inspect model validation in source snapshot")}. Canadian quote availability does not verify BC or Ontario eligibility.</p>
+          <p><strong>Score components:</strong> ${components}. Research score ranks evidence quality; it is not a percentage probability.</p>
+          <p><strong>Quote timestamps / peer prices:</strong> ${esc(rec.peerBookCount ?? peers.length)} peers reported. Freshness must be checked per quote.</p><ul>${peerRows || "<li>Peer quote evidence unavailable. Do not treat as actionable.</li>"}</ul>
+          ${(rec.notes ?? []).length ? `<p>Notes: ${rec.notes.map(esc).join(" · ")}</p>` : ""}
+        </div></details>
+      </article>
+    </td></tr>`;
   }).join("");
 }
+
+function researchScore(rec) {
+  if (Number.isFinite(rec.researchScore)) return clamp(rec.researchScore,0,100);
+  // Legacy ranking score is only a heuristic, never a win probability.
+  return Number.isFinite(rec.score) ? clamp(rec.score,0,100) : NaN;
+}
+function researchActionAmount(rec) {
+  if (!isLiveMode || rec.actionable !== true) return 0;
+  if (!currentSnapshot?.markets?.some(market => market.id === rec.marketId)) return 0;
+  try {
+    attachResearchEvidence(currentSnapshot, [rec], {...currentReport?.settings, staleMinutes:currentReport?.settings?.staleMinutes ?? 8, targetBook:rec.targetBook ?? currentReport?.settings?.targetBook ?? $("targetBookSelect")?.value, now:new Date(Date.now()).toISOString()});
+  } catch { return 0; }
+  return isLiveMode && rec.actionable === true && Number.isFinite(rec.actionableStakeAmount) && rec.actionableStakeAmount > 0 ? rec.actionableStakeAmount : 0;
+}
+function numberText(value, digits=2) { return Number.isFinite(value) ? value.toFixed(digits) : "—"; }
+function probabilityText(value) { return Number.isFinite(value) && value >= 0 && value <= 1 ? pct(value) : "Unknown"; }
 
 // Called from table button
 window.trackSignal = function(recIdx) {
@@ -695,18 +693,12 @@ function updateCalculator() {
   const verdict = els.calcVerdict;
   verdict.className = `verdict-box ${ev >= 0.05 ? "positive" : ev >= 0 ? "neutral" : "negative"}`;
 
-  if (ev >= 0.10) {
-    els.calcVerdictText.textContent = "🔥 Strong Edge";
-    els.calcVerdictSub.textContent  = `+${(ev*100).toFixed(1)}% EV — high-confidence value bet if data is solid`;
-  } else if (ev >= 0.05) {
-    els.calcVerdictText.textContent = "✅ Positive Edge";
-    els.calcVerdictSub.textContent  = `+${(ev*100).toFixed(1)}% EV — worth considering, check data quality`;
-  } else if (ev >= 0) {
-    els.calcVerdictText.textContent = "🟡 Marginal Edge";
-    els.calcVerdictSub.textContent  = `+${(ev*100).toFixed(1)}% EV — thin edge, model confidence matters here`;
+  if (ev >= 0) {
+    els.calcVerdictText.textContent = ev >= .05 ? "Positive hypothetical EV" : "Marginal hypothetical EV";
+    els.calcVerdictSub.textContent = `${(ev*100).toFixed(1)}% EV — hypothetical calculation only. Your probability estimate is not validated; this is not a recommendation.`;
   } else {
-    els.calcVerdictText.textContent = "❌ No Edge";
-    els.calcVerdictSub.textContent  = `${(ev*100).toFixed(1)}% EV — negative expected value, avoid`;
+    els.calcVerdictText.textContent = "Negative hypothetical EV";
+    els.calcVerdictSub.textContent = `${(ev*100).toFixed(1)}% EV — this input estimate does not support a bet.`;
   }
 }
 
@@ -880,15 +872,19 @@ function renderTrackerSummary() {
 function exportSignalsCsv() {
   if (!currentReport?.recommendations?.length) return;
   const rows = [
-    ["Selection","Event","League","Sport","MarketType","Bet365Odds","FairDecimal","ModelProb","EV","Confidence","Stake","UnadjustedStake","PortfolioStatus","RiskLabel","DataQuality","PeerBooks"]
+    ["Selection","Event","League","Sport","MarketType","OfferedOdds","ConsensusFairDecimal","EstimatedProb","EstimatedEV","ConfidenceHeuristic","PaperStake","UnadjustedPaperStake","PortfolioStatus","RiskLabel","DataQuality","PeerBooks","TargetBook","ResearchScore","Actionable","ActionAmount","BlockReasons","DataMode"]
   ];
   currentReport.recommendations.forEach((r) => {
+    const actionAmount = researchActionAmount(r);
     rows.push([r.selection, r.event, r.league, r.sport, r.marketType,
-      r.bet365Decimal, r.fairDecimal, r.modelProbability, r.expectedValue,
+      r.offeredDecimal ?? r.bet365Decimal, r.fairDecimal, r.modelProbability, r.expectedValue,
       r.confidence, r.stakeAmount, r.unadjustedStakeAmount ?? r.stakeAmount,
-      r.portfolio?.status ?? "", r.risk.label, r.dataQuality, r.peerBookCount]);
+      r.portfolio?.status ?? "", r.risk?.label ?? "Unknown", r.dataQuality, r.peerBookCount,
+      r.targetBook ?? "Unknown", researchScore(r), actionAmount > 0,
+      actionAmount, (r.blockReasons ?? []).join("; "),
+      currentSnapshot?.provider === "manual-sample" ? "Demo non-actionable" : isLiveMode ? "Fetched research" : "Imported research"]);
   });
-  downloadCsv(rows, "edge-signals.csv");
+  downloadCsv(rows, "research-shortlist.csv");
 }
 
 function exportTrackerCsv() {
@@ -919,7 +915,7 @@ function persistBetLog() {
 
 // ── Helpers ───────────────────────────────────────────────────
 function maybeNotifySignals(report) {
-  const topSignals = (report.recommendations ?? []).slice(0, 3);
+  const topSignals = (report.recommendations ?? []).filter(signal => researchActionAmount(signal) > 0).slice(0, 3);
   if (!topSignals.length) return;
 
   const storageKey = "bet365EdgeBrain:notifiedSignals";

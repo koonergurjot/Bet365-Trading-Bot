@@ -14,3 +14,7 @@ jobs:
         with:
           node-version: 20
       - run: npm test
+      - name: Research reliability, security and integration tests
+        env:
+          TMPDIR: ${{ runner.temp }}
+        run: node --test tests/reliability.test.js tests/review-blockers.js tests/security-browser.js tests/security-proxy.js tests/security-static.js tests/ui-dashboard.js tests/integration-status.js tests/integration-manager.js tests/integration-errors.js

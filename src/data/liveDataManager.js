@@ -56,6 +56,7 @@ export async function fetchLiveSnapshot({
   sports = null,
   withOddsBlaze = true,
   withSportsDb = true,
+  manual = false,
 } = {}) {
   const estimatedCost = estimateFetchCost(maxSports, { markets });
   const safety = checkQuotaSafety(estimatedCost);
@@ -69,7 +70,7 @@ export async function fetchLiveSnapshot({
 
   let snapshot;
   try {
-    snapshot = await fetchAllLiveOdds({ maxSports, markets, sports });
+    snapshot = await fetchAllLiveOdds({ maxSports, markets, sports, manual });
   } catch (err) {
     errorCount++;
     throw new Error(`The Odds API fetch failed: ${err.message}`);
@@ -149,6 +150,7 @@ export function restoreCachedSnapshot() {
 
 export function startPolling(onSnapshot, intervalMs = POLL_CONFIG.defaultIntervalMs, onQuotaWarning = null) {
   stopPolling();
+  if (POLL_CONFIG.manualOnly) throw new Error('Automatic odds refresh is disabled. Use an explicit manual fetch.');
   const safeInterval = Math.max(intervalMs, POLL_CONFIG.minIntervalMs);
 
   const tick = async () => {

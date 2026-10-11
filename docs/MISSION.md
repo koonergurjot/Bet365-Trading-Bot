@@ -1,72 +1,28 @@
 # Mission
 
-> **Read this in every new AI session before touching code.**
+Build a private, Canadian-relevant odds research and manual decision-support tool for Gurjot. Long-run profitability is an objective to test, not a result we can promise or infer from a green score.
 
-## What We're Building
+## Operating rules
 
-A **Bet365 trading bot** that is fundamentally a **recommendation engine**.
+- Never place bets, deposit funds or operate a sportsbook account automatically.
+- No paid data, subscriptions or paid API upgrades. Use explicitly verified free access, with hard quota limits.
+- No private credentials in browser source, sample data, docs, logs or commits. Previous exposed provider credentials must be rotated.
+- Never substitute another book's odds for Bet365. Show unsupported destinations clearly.
+- Default B.C. research to PlayNow. Provider Canadian or Ontario region coverage does not establish provincial eligibility.
+- Distinguish reference books, destination book, estimated probability, research priority, model validation and actionability.
+- No "true probability" label without acknowledging uncertainty; consensus is an estimate, not an oracle.
+- Fail closed: stale/demo/missing data, unverified model/rules/jurisdiction mean zero actionable stake.
+- A prediction archive and paper validation are needed to test models; do not re-enable the legacy user bet-tracker UI.
+- Soccer first, then NFL/CFB and NBA after a working calibration pipeline; add other sports only when supported by reliable free data and evidence.
 
-It constantly screens sports markets, calculates the *true* probability of each outcome using market consensus + scraped player and team stats, compares that to **Bet365's posted odds**, and surfaces a short, ranked list of bets where Bet365 is mispriced.
+## What is actually implemented
 
-The user (Gurjot) opens the app, sees the top signals, opens Bet365 separately, and places those bets manually.
+Vanilla JS research UI, odds math and ranking engine, source adapters, same-origin local server proxy, explicit reliability gate and source/score explanations. Legacy confidence and quality scores are heuristics, not statistically calibrated accuracy.
 
-## End Goal
+A live connection, calibrated model and production deployment require separate verification. Read `docs/ROADMAP.md` for the ten release rounds and known blockers. Passing unit tests validates tested behavior only, not a betting edge.
 
-**Make money consistently with the bets the engine screens.**
+## North-star validation
 
-Not "be a perfect odds model." Not "track every bet ever placed." Not "automate Bet365." Just: *consistently profitable signals, surfaced fast enough to act on.*
+Prospectively archive every research prediction and its as-of inputs. Evaluate chronological out-of-sample calibration, Brier/log loss against peer no-vig baselines, equivalent-market closing-line value, attainable prices and paper ROI with uncertainty after slippage. Do not cherry-pick successful outcomes. CLV alone does not establish guaranteed profit.
 
-Every change to this codebase should be evaluated against that goal.
-
-## What This App Does NOT Do
-
-- ❌ **Track bets.** Bet365 already does this in the user's account history. Duplicating it is wasted work.
-- ❌ **Place bets automatically.** Bet365 limits accounts that look like bots. The user places every bet by hand.
-- ❌ **Compare books for the sake of comparing.** The point is finding edges *Bet365* gives, not running a generic odds-comparison site.
-- ❌ **Spread across every sport.** Focus is Soccer → NFL/CFB → NBA, in that order.
-
-## How Signals Are Made
-
-1. **Pull odds** from licensed odds APIs — Bet365 quotes plus a pool of peer books for consensus.
-2. **Scrape stats** server-side from public stat sites:
-   - Soccer → FBref, Understat, ESPN
-   - NFL/CFB → Pro-Football-Reference, ESPN
-   - NBA → Basketball-Reference, ESPN
-3. **Estimate true probability** using sport-specific models (xG-Poisson for soccer, EPA-based for NFL, pace×efficiency for NBA), anchored to no-vig consensus as a sanity check.
-4. **Compare** Bet365 price vs true probability → expected value (EV %).
-5. **Filter** by confidence, data freshness, peer-book agreement, and reliability gates.
-6. **Rank** by combined edge × confidence × risk score.
-7. **Display** the top picks in plain language: *"Bet on X at Y price for $Z stake — edge is N%."*
-
-## How The User Reads The App
-
-- **Signals tab (default):** the only tab that matters day-to-day. Top picks, best edge first.
-- **Calculator tab:** sanity-check a price manually if needed.
-- **Data tab:** see raw snapshots and provider/scrape diagnostics for debugging.
-- (Tracker tab is hidden — Bet365 owns bet tracking.)
-
-## Why It's Vibe-Coded With Multiple LLMs
-
-The user is comfortable with the technical stack (vanilla JS, Cloudflare Pages, GitHub) but wants AI to do the heavy implementation. Codex and Claude Cowork take turns editing this repo. That's why:
-
-- This `MISSION.md` exists — so every new AI session loads context fast.
-- `AGENTS.md` exists — so every AI follows the same edit rules.
-- `ENGINE_CONTRACT.md` exists — so no AI silently breaks the snapshot/signal schema.
-- `STAT_SOURCES.md` exists — so any AI can pick up the scraping work.
-- Code is heavily commented with *why*, not just *what*.
-
-## The Brutal Truths
-
-- A positive EV % is only as good as the data it came from.
-- Bet365 will limit profitable accounts. Stake conservatively.
-- Stale odds can fake an edge that doesn't exist.
-- Settlement-rule mismatches can void a "winner."
-- The path to consistent profit is: small stakes → prove the edge → calibrate → scale slowly.
-
-The app is built to flag those risks, not hide them. If the engine is uncertain, it lowers confidence rather than emitting a noisy signal.
-
-## North-Star Metric
-
-**Closing-line value (CLV) on emitted signals over rolling 30 days, by sport.**
-
-If signals consistently beat the closing line, the model has real edge and profit will follow over a large enough sample. If they don't, no amount of UI polish saves us.
+Until the evidence exists, the correct app output is **research only / no bet**.
