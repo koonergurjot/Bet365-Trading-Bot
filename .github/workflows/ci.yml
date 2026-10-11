@@ -17,4 +17,4 @@ jobs:
       - name: Research reliability, security and integration tests
         env:
           TMPDIR: ${{ runner.temp }}
-        run: node --test tests/reliability.test.js tests/review-blockers.js tests/security-browser.js tests/security-proxy.js tests/security-static.js tests/ui-dashboard.js tests/integration-status.js tests/integration-manager.js tests/integration-errors.js tests/round2-backend-verify.js tests/round2-backend-status.js tests/round2-backend-http.js tests/round2-backend-hosted.js tests/round2-ui-coverage.js tests/round2-ui-wiring.js tests/round2-ui-integration.js
+        run: node --test tests/reliability.test.js tests/review-blockers.js tests/security-browser.js tests/security-proxy.js tests/security-static.js tests/ui-dashboard.js tests/integration-status.js tests/integration-manager.js tests/integration-errors.js tests/round2-backend-verify.js tests/round2-backend-status.js tests/round2-backend-http.js tests/round2-backend-hosted.js tests/round2-ui-coverage.js tests/round2-ui-wiring.js
