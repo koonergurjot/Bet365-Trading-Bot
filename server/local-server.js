@@ -16,13 +16,14 @@ export function createLocalServer({root=resolve('.'),env=process.env,proxy=creat
     try {path=decodeURIComponent((req.url||'/').split('?')[0]);} catch {return send(400,{error:'Invalid path.'});}
     if(path.includes('\\') || path.includes('\0') || path.split('/').some(p=>p==='..'||p.startsWith('.'))) return send(403,{error:'Forbidden.'});
     if(path.startsWith('/api/')) {
+      if(path==='/api/odds/verify' && req.method!=='GET') return send(405,{error:'Verification requires GET.'});
       if(req.headers['sec-fetch-site']==='cross-site') return send(403,{error:'Cross-origin request denied.'});
       if(req.headers.origin && req.headers.origin!==`http://${req.headers.host}`) return send(403,{error:'Cross-origin request denied.'});
       if(path!=='/api/status' && !path.startsWith('/api/odds/')) return send(404,{error:'Unknown endpoint.'});
       try {
         if(path==='/api/status') {
           const result=await proxy.request('/api/odds/status');
-          return send(result.status,{providers:{oddsApi:result.body}});
+          return send(result.status,{liveEnabled:true,deploymentMode:'local',providers:{oddsApi:result.body}});
         }
         const result=await proxy.request(req.url,{manual:req.headers['x-odds-manual']==='1'});
         for(const [key,value] of Object.entries(result.headers||{})) res.setHeader(key,value);

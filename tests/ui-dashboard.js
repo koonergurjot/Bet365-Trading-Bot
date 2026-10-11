@@ -4,13 +4,14 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 import { attachResearchEvidence } from '../src/engine/reliabilityGate.js';
+import { summarizeConnectionCoverage } from '../src/data/connectionCoverage.js';
 const source = fs.readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 function harness(fetchImpl = async () => ({ok:true, json:async()=>({})})) {
   const nodes = new Map();
   const node = id => { if (!nodes.has(id)) nodes.set(id, {textContent:'', innerHTML:'', value:'', style:{}, classList:{toggle(){}}, setAttribute(){}, addEventListener(){}, querySelectorAll(){return []}}); return nodes.get(id); };
   const calls = [];
-  const context = vm.createContext({document:{getElementById:node,querySelectorAll:()=>[]}, localStorage:{getItem:()=>null}, window:{}, console, Date, attachResearchEvidence, setInterval:callback=>{context.freshnessTick=callback;return 1;}, setTimeout:()=>0, fetch:async(...args)=>{calls.push(args[0]);return fetchImpl(...args)}, liveData:{getAdaptiveEngineConfig:config=>config,restoreCachedSnapshot:()=>null,getFullStatus:()=>({quota:{remaining:null,level:'ok'},isPolling:false}),getStatusSummary:()=>''}, clamp:(v,a,b)=>Math.min(b,Math.max(a,v))});
-  const code = source.replace(/import\s+[\s\S]*?from\s+"[^"]+";/g,'').replace('bindEvents();\nupdateCalculator();\nrenderTracker();\nboot();','');
+  const context = vm.createContext({document:{getElementById:node,querySelectorAll:()=>[]}, localStorage:{getItem:()=>null}, window:{}, console, Date, attachResearchEvidence, summarizeConnectionCoverage, setInterval:callback=>{context.freshnessTick=callback;return 1;}, setTimeout:()=>0, fetch:async(...args)=>{calls.push(args[0]);return fetchImpl(...args)}, liveData:{getAdaptiveEngineConfig:config=>config,restoreCachedSnapshot:()=>null,getFullStatus:()=>({quota:{remaining:null,level:'ok'},isPolling:false}),getStatusSummary:()=>''}, clamp:(v,a,b)=>Math.min(b,Math.max(a,v))});
+  const code = source.replace(/\r\n/g,'\n').replace(/import\s+[\s\S]*?from\s+"[^"]+";/g,'').replace('bindEvents();\nupdateCalculator();\nrenderTracker();\nboot();','');
   vm.runInContext(code,context);
   return {nodes,node,calls,run:code=>vm.runInContext(code,context)};
 }

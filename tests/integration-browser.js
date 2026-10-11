@@ -56,15 +56,22 @@ test('Edge buttons reach real backend: manual fixture quotes, genuine empty, exp
     try {
       const pg=await b.newPage();await isolate(pg);pg.on('pageerror',e=>errors.push(e.message));await pg.goto(base);
       await pg.locator('[data-tab="data"]').click();
+      if(next==='disconnected') {
+        // Unconfigured backend: the control must be disabled (not clickable) and nothing may be fetched or fabricated.
+        await pg.waitForFunction(()=>/Disconnected/.test(document.querySelector('#connectionStatus').textContent));
+        assert.equal(await pg.locator('#btnFetchLive2').isDisabled(),true,'Fetch Live must be disabled when disconnected');
+        await pg.locator('#btnFetchLive2').evaluate(el=>el.click());
+        await pg.waitForTimeout(300);
+        assert.equal(await pg.locator('#snapshotEditor').inputValue(),'');
+        assert.ok(!(await pg.locator('body').innerText()).includes('Research data loaded:'));
+        assert.equal(upstreamCalls.length,callsBefore,'disabled/unconfigured control must not call a provider');
+        continue;
+      }
       await pg.locator('#btnFetchLive2').click();
       await pg.waitForFunction(()=>document.querySelector('#btnFetchLive2').disabled===false);
       const text=await pg.locator('body').innerText();
       if(next==='empty') assert.match(text,/no events returned/i);
       else {assert.match(text,/Live fetch failed/i);assert.ok(!text.includes('Research data loaded:'));assert.ok(!text.includes('no events returned'));assert.equal(await pg.locator('#snapshotEditor').inputValue(),'');}
-      if(next==='disconnected') {
-        assert.match(await pg.locator('#connectionStatus').innerText(),/Disconnected/);
-        assert.equal(upstreamCalls.length,callsBefore,'unconfigured click must not call a provider');
-      }
     } finally {await b.close();}
   }
   assert.deepEqual(errors,[]);
