@@ -4,21 +4,22 @@ This repo is **vibe-coded by multiple LLMs** (primarily Codex and Claude Cowork)
 
 ## The Mission (Read This First)
 
-**This is a signals engine for Bet365.** Its only job is to constantly screen sports markets, find bets where Bet365's posted odds are mispriced versus true probability, and surface a short ranked list of high-EV / high-confidence picks. The user (Gurjot) reads those signals and places the bets manually in Bet365. **The end goal is consistent profit over time.**
+**This is a private Canadian odds research engine for Gurjot.** Compare a selected destination bookmaker with peer no-vig consensus and a disclosed estimated probability. Support manual decisions only. Profitability is a goal to validate, never a claim derived from a heuristic score. Read `docs/MISSION.md` and `docs/ROADMAP.md` for current scope.
 
-If a proposed change does not directly make signals more accurate, faster, or easier to act on — push back or skip it.
+If a proposed change does not improve correctness, source reliability or ease of interpretation, skip it.
 
 ### What this app is NOT
 
-- **Not a bet tracker.** Bet365 already tracks placed bets, results, and P&L. Do not add bet-tracking features. The legacy tracker tab is hidden in the UI; do not re-enable it without explicit user request.
-- **Not an auto-bettor.** Never add code that places bets on Bet365 on the user's behalf.
-- **Not a generic odds comparison tool.** The comparison that matters is Bet365 price vs *true* probability (consensus + scraped stats), not Bet365 vs other books for its own sake.
+- **Not a user bet tracker.** Keep the legacy tracker hidden; a prediction archive and paper-validation ledger are separate research infrastructure.
+- **Not an auto-bettor.** Never add wager placement, deposits or sportsbook account operations.
+- **Not proof of an edge.** A 0–100 research score is not win probability; consensus is not true probability. Unvalidated, stale, demo or unverified jurisdiction/rules mean zero actionable stake.
 
 ## Repo & Hosting
 
-- **GitHub:** https://github.com/koonergurjot/bet365-edge-brain
-- **Cloudflare Pages:** deploys `main` branch automatically. Build command `exit 0`, output dir `/`.
-- **Workers:** odds API calls and stat-site scraping run server-side in Cloudflare Workers (keys + rate limits stay out of the browser).
+- **GitHub:** https://github.com/koonergurjot/Bet365-Trading-Bot
+- **Local backend:** `npm run serve` runs a localhost-only Node server with same-origin odds proxy. Provider keys come from server environment only.
+- **Remote deployment:** static Cloudflare Pages cannot execute this Node backend. An authenticated server-side equivalent is required and has not been verified.
+- **Free coverage:** provider CA region includes PlayNow and Ontario-labelled books; do not assert free Canadian Bet365 coverage or provincial eligibility without actual verification. No paid plans, direct bookmaker scraping or automatic key reuse.
 
 ## Sport Priority
 

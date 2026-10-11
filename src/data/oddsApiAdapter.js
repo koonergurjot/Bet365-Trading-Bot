@@ -4,16 +4,16 @@
  * Fetches live odds from https://the-odds-api.com and normalizes them
  * into the Bet365 Edge Brain ENGINE_CONTRACT snapshot format.
  *
- * Regions fetched: eu (Bet365, Betfair, Unibet) + us (DraftKings, FanDuel, BetMGM).
- * Markets fetched: h2h (moneyline), spreads, totals.
- * Odds format:     decimal (required by the engine).
+ * Browser transport is the same-origin server proxy; no private browser key.
+ * Default: Canada region, h2h market, one manually requested priority sport.
+ * Canadian peer feeds do not imply free Bet365 coverage.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { API_CONFIG, PRIORITY_SPORTS, QUOTA, POLL_CONFIG } from "../config.js";
 
 const BASE = API_CONFIG.theOddsApi.baseUrl;
-const KEY  = API_CONFIG.theOddsApi.key;
+
 
 // ── Quota tracker (updated from response headers) ──────────────────────────
 export const quota = {
@@ -80,6 +80,13 @@ export function checkQuotaSafety(plannedCost = 1) {
 
 // ── Book name normalisation map ────────────────────────────────────────────
 const BOOK_DISPLAY_NAMES = {
+  playnow_ca: 'PlayNow',
+  betano_ca_on: 'Betano',
+  betmgm_ca_on: 'BetMGM',
+  betrivers_ca_on: 'BetRivers',
+  pointsbetca: 'PointsBet',
+  proline_ca_on: 'Proline',
+  sportsinteraction_ca_on: 'Sports Interaction',
   bet365:           "Bet365",
   draftkings:       "DraftKings",
   fanduel:          "FanDuel",
@@ -149,7 +156,7 @@ const SETTLEMENT_RULES = {
  * Returns an array of sport objects: { key, group, title, description, active, has_outrights }
  */
 export async function fetchInSeasonSports() {
-  const url = `${BASE}/sports?apiKey=${KEY}`;
+  const url = `${BASE}/sports`;
   const res = await apiFetch(url);
   updateQuotaFromResponse(res);
   const sports = await res.json();
@@ -169,35 +176,24 @@ export async function fetchSportOdds(sportKey, {
   regions    = API_CONFIG.theOddsApi.regions,
   markets    = API_CONFIG.theOddsApi.markets,
   oddsFormat = "decimal",
+  manual = false,
 } = {}) {
+  if(!manual) throw new Error('Manual odds request required.');
   const params = new URLSearchParams({
-    apiKey: KEY,
+
     regions,
     markets,
     oddsFormat,
     dateFormat: "iso",
   });
   const url = `${BASE}/sports/${sportKey}/odds?${params}`;
-  let res;
-  try {
-    res = await apiFetch(url);
-  } catch (err) {
-    console.warn(`[OddsAPI] ${sportKey} fetch failed:`, err.message);
-    return [];
-  }
-  if (res.status === 422) {
-    // Sport exists but has no upcoming events with odds
-    return [];
-  }
-  if (!res.ok) {
-    console.warn(`[OddsAPI] ${sportKey} returned ${res.status}`);
-    return [];
-  }
-
+  const res = await apiFetch(url, {manual});
   updateQuotaFromResponse(res);
-
+  if (!res.ok) throw new Error(`Odds provider request failed (HTTP ${res.status}).`);
+  const events = await res.json();
+  if (!Array.isArray(events)) throw new Error('Invalid Odds provider response: expected an event array.');
   console.log(`[OddsAPI] ${sportKey} — quota: ${quota.used} used / ${quota.remaining} remaining`);
-  return res.json();
+  return events;
 }
 
 /**
@@ -212,7 +208,11 @@ export async function fetchAllLiveOdds({
   maxSports = POLL_CONFIG.maxSports,
   markets   = API_CONFIG.theOddsApi.markets,
   sports    = null,
+  manual = false,
 } = {}) {
+  if(!manual) throw new Error('Manual odds request required.');
+  maxSports=Math.min(POLL_CONFIG.maxSports,Math.max(1,Number(maxSports)||1));
+  if(sports) sports=sports.filter(s=>PRIORITY_SPORTS.includes(s)).slice(0,maxSports);
   // Determine which sports to fetch
   let targetSports = sports;
   if (!targetSports) {
@@ -229,23 +229,27 @@ export async function fetchAllLiveOdds({
 
   // Fetch each sport — quota-gated, sequential with brief pauses
   const allEvents = [];
+  let successfulOddsRequests = 0;
   for (const sportKey of targetSports) {
     // Check quota before every request
     const safety = checkQuotaSafety();
     if (!safety.ok) {
       console.warn(`[OddsAPI] ${safety.message} — stopping after ${allEvents.length} events`);
+      if (successfulOddsRequests === 0) throw new Error(safety.message);
       break;
     }
     if (safety.level === "warn") {
       console.warn(`[OddsAPI] ${safety.message}`);
     }
-    const events = await fetchSportOdds(sportKey, { markets });
+    const events = await fetchSportOdds(sportKey, { markets, manual });
+    successfulOddsRequests++;
     allEvents.push(...events);
     if (targetSports.indexOf(sportKey) < targetSports.length - 1) {
       await sleep(250); // polite pause between sport calls
     }
   }
 
+  if (successfulOddsRequests === 0) throw new Error("No odds request completed; coverage is unknown.");
   console.log(`[OddsAPI] Total events fetched: ${allEvents.length}`);
   return normalizeToSnapshot(allEvents);
 }
@@ -307,7 +311,7 @@ function groupBooksByMarketType(event) {
 
   for (const bookmaker of (event.bookmakers ?? [])) {
     const bookName    = resolveBookName(bookmaker.key);
-    const updatedAt   = bookmaker.last_update ?? event.commence_time;
+    const updatedAt   = bookmaker.last_update ?? null;
 
     for (const market of (bookmaker.markets ?? [])) {
       const marketType = MARKET_TYPE_MAP[market.key] ?? market.key;
@@ -338,7 +342,7 @@ function groupBooksByMarketType(event) {
 function buildBookEntry(bookName, updatedAt, outcomes) {
   return {
     name:      bookName,
-    updatedAt: updatedAt ?? new Date().toISOString(),
+    updatedAt: updatedAt ?? null,
     outcomes:  outcomes.map((o) => ({
       name:  o.name,
       price: Number(o.price),
@@ -366,9 +370,9 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-async function apiFetch(url) {
-  const res = await fetch(url);
-  if (res.status === 401) throw new Error("Invalid Odds API key — check config.js");
+async function apiFetch(url, {manual=false} = {}) {
+  const res = await fetch(url, {headers:manual?{'X-Odds-Manual':'1'}:{},signal:AbortSignal.timeout(10000)});
+  if (res.status === 401) throw new Error("Invalid Odds API key — check server ODDS_API_KEY");
   if (res.status === 429) throw new Error("Odds API rate limit hit — slow down requests");
   if (res.status === 403) throw new Error("Odds API quota exhausted");
   return res;

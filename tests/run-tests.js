@@ -359,7 +359,7 @@ const tests = [
           marketType: "moneyline",
           settlementRules: "Official result including overtime.",
           model: {
-            version: "baseline-weighted-consensus-v2",
+            version: "independent-threshold-fixture-v1",
             confidence: 0.68,
             probabilities: [
               { name: "Home", probability: 0.525, canonicalKey: "home" },
@@ -390,7 +390,7 @@ const tests = [
           marketType: "moneyline",
           settlementRules: "Official result including overtime.",
           model: {
-            version: "baseline-weighted-consensus-v2",
+            version: "independent-threshold-fixture-v1",
             confidence: 0.68,
             probabilities: [
               { name: "Thin Home", probability: 0.525, canonicalKey: "home" },

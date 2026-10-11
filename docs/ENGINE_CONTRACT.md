@@ -35,6 +35,10 @@ Each market:
 }
 ```
 
+Each book: `updatedAt` is the provider quote timestamp, or `null` when missing. Never substitute event start or local fetch time.
+
+Consensus-baseline versions use the currently selected destination-excluded consensus for `modelProbability`, regardless of a precomputed baseline probability array. Independent-model probabilities remain unchanged. UI action amounts must revalidate freshness against the local clock at use time, not rely on a previously computed `actionable` flag. A 30-second local-only refresh updates the display without provider requests.
+
 Each book:
 
 ```json
@@ -81,7 +85,24 @@ The engine returns recommendations shaped for UI and future command-center integ
 }
 ```
 
-`stakeFraction` and `stakeAmount` are the portfolio-adjusted recommendation. Use `unadjustedStakeFraction` / `unadjustedStakeAmount` to inspect the raw Kelly-sized stake before total, sport, and event exposure caps.
+`stakeFraction` and `stakeAmount` are legacy, portfolio-adjusted **hypothetical** Kelly calculations. They are not authorization to wager. Use `actionableStakeAmount` (zero when blocked) for any decision-support display. Use `unadjustedStakeFraction` / `unadjustedStakeAmount` only to inspect the raw calculation.
+
+## Research and actionability extension
+
+`analyzeSnapshot(snapshot, { targetBook: "PlayNow" })` selects the destination book; omitted target defaults to Bet365 for backward compatibility. `bet365Decimal` and `bet365ImpliedProbability` are legacy field names for the selected destination; new code should display `targetBook` and `offeredDecimal`, not label all quotes Bet365.
+
+Each research candidate now includes:
+- `researchScore`: bounded integer 0–100, heuristic research priority, NOT win probability. Components: 40 × clamped(EV / 0.10), 30 × confidence, 30 × dataQuality.
+- `actionable`, `blockReasons`, `actionableStakeAmount`.
+- `evidence`: formula, model and consensus probabilities, implied probability, quote update time, per-peer decimal odds/no-vig probability/timestamp/freshness, model source, score components and validation reference.
+
+The report includes `actionableRecommendations` and `actionableCount`. `recommendations` remains the research list so rejected actionability can be explained, not silently hidden.
+
+The separate safety gate compares quote and snapshot timestamps with current time, requires at least three fresh peer books, a future pre-match event, positive EV and valid prices/probabilities. It blocks demo data and unverified settlement or jurisdiction. Input must explicitly provide `settlementRulesVerified: true` and `jurisdictionVerified: true`; these represent checks performed by an upstream verified process, not adapter guesses.
+
+Model validation declaration requires `model.validation` with `status: "passed"`, `outOfSample: true`, `sampleSize >= 500`, finite `brierScore` in [0,1], and `reportId`. These are a screening floor and report pointer, not evidence a model is profitable. No current adapter produces verified validation declarations. Future releases must verify archived reports rather than trust imported JSON declarations. Never promote a model merely because its Brier score exists.
+
+`settings.now` supports deterministic offline replay only; the browser uses actual current time. Historical/sample data stays research-only. Current confidence/dataQuality are heuristics, not calibrated accuracy or confidence intervals.
 
 ## Required Future Additions
 

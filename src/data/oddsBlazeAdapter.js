@@ -18,7 +18,7 @@ import { americanToDecimal } from "../engine/oddsMath.js";
 import { canonicalizeTeamName, canonicalizeText } from "../engine/marketNormalizer.js";
 
 const BASE = API_CONFIG.oddsBlaze.baseUrl;
-const KEY  = API_CONFIG.oddsBlaze.key;
+
 
 // Map OddsBlaze league slugs → display labels used for event matching
 const LEAGUE_META = {
@@ -44,22 +44,8 @@ const LEAGUE_META = {
  * @param {string} league      - e.g. "nba", "epl"
  */
 export async function fetchOddsBlazeRaw(sportsbook, league) {
-  const url = `${BASE}/?sportsbook=${encodeURIComponent(sportsbook)}&league=${encodeURIComponent(league)}&key=${KEY}`;
-  try {
-    const res = await fetch(url);
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        console.warn(`[OddsBlaze] Auth failed for ${sportsbook}/${league} — trial key may be expired`);
-      } else {
-        console.warn(`[OddsBlaze] ${sportsbook}/${league} returned ${res.status}`);
-      }
-      return null;
-    }
-    return await res.json();
-  } catch (err) {
-    console.warn(`[OddsBlaze] ${sportsbook}/${league} fetch error:`, err.message);
-    return null;
-  }
+  // Disabled: no verified free server-side integration; never send browser keys.
+  return null;
 }
 
 /**
@@ -87,6 +73,7 @@ export async function fetchSupplementaryBooks({
   leagues    = API_CONFIG.oddsBlaze.leagues,
   sportsbooks = API_CONFIG.oddsBlaze.sportsbooks,
 } = {}) {
+  if (!API_CONFIG.oddsBlaze.enabled) return [];
   const results = [];
 
   for (const league of leagues) {
@@ -184,7 +171,7 @@ function extractBookEntries(data, sportsbook, meta) {
         league: meta.league,
         book: {
           name:      bookDisplayName,
-          updatedAt: now,
+          updatedAt: game.last_update ?? null,
           outcomes,
         },
       });

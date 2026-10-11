@@ -1,93 +1,71 @@
-# Roadmap
+# Canadian Odds Research — ten upgrade rounds
 
-The single goal: **a constantly-running signals feed that finds mispriced Bet365 markets accurately enough to be profitable when bet manually.**
+## Decision
 
-Each phase below should be evaluated on one question: *does finishing this phase put real, profitable signals on Gurjot's screen?*
+Build a private, pre-match research tool first, not an always-on live betting bot. Treat positive EV as an estimate, not a proven advantage. Keep zero real-money stake recommendations until a model has documented out-of-sample validation, fresh prices, verified settlement rules and verified provincial availability. Monthly profit is a goal, never an acceptance test that software can guarantee.
 
-## Phase 0: Local Brain Scaffold ✅ DONE
+## What inspection actually established
 
-- Static SPA, no build step.
-- Manual JSON snapshot input for testing.
-- Pure odds math (EV, Kelly, vig removal, conversions).
-- Recommendation engine with confidence + risk + portfolio caps.
-- Sample multi-sport data.
-- Test suite for math + engine + history + portfolio guardrails.
-- AI collaboration docs.
+- Both the existing Downloads copy and the clean GitHub baseline passed 16 tests (`npm test`). This establishes those tested behaviors, not prediction accuracy.
+- The Downloads copy at `C:/Users/koone/Downloads/Folders/Bet365 Trade Bot/bet365-edge-brain` has uncommitted edits. It was not modified. Work proceeds in `C:/Users/koone/Documents/Bet365-Trading-Bot`.
+- The baseline shipped private provider keys in browser `src/config.js`; remove these and rotate them at the provider. Removing a key from HEAD does not erase Git history or previous deployments.
+- Baseline free-tier polling was every 72 hours, while README described minute-level screening. Those are incompatible products. Spend quota only on deliberate research windows; never describe old cached data as live.
+- The official Odds API bookmaker catalogue lists a Canadian `ca` region, including `playnow_ca`, `betano_ca_on`, `betmgm_ca_on`, `betrivers_ca_on`, `pointsbetca`, `proline_ca_on`, and `sportsinteraction_ca_on`. BET99 is marked paid-only. This is catalogue coverage, NOT an authenticated successful odds request or evidence every event is covered.
+- The same catalogue does not establish free Canadian Bet365 coverage. Its `bet365_au` listing is paid-only and limited to AFL/NRL h2h/spreads/totals. Do not relabel another book's price as Bet365.
+- A public ESPN EPL scoreboard request returned HTTP 200 with six events. That proves this one request works, not an SLA, historical completeness, model features, or a redistribution licence.
 
-## Phase 1: Live Odds Pipeline ✅ MOSTLY DONE
+## Data strategy and free-budget reality
 
-- Adapters for The Odds API, OddsBlaze, TheSportsDB.
-- Live data manager with poll/refresh.
-- Quota + freshness diagnostics in topbar.
+Primary odds candidate: The Odds API Starter (advertised 500 credits/month). Start with one selected sport and h2h, `ca`. The official odds cost is markets × regions; choosing up to ten explicit bookmakers is billed as one region. A proposal of one sport × one market × one region × ten uncached requests/day × 30 days uses 300 credits. These are on-demand research windows, not continuous monitoring. Six sports × three markets × two regions × 12 polls/hour × eight hours/day × 30 days would use 103,680 credits: incompatible with free Starter.
 
-**Remaining:** move provider calls into Cloudflare Workers so API keys leave the browser.
+Provider headers are the authority for remaining credits. Keep a reserve, cache identical requests briefly, prevent concurrent duplication and stop when budget is unknown/insufficient. A quota cache never makes an old quote actionable. Never purchase historical odds, upgrade a plan or attach payment details automatically. Capture history prospectively instead.
 
-## Phase 2: Stat Scraping Layer 🚧 NEXT (highest leverage)
+Canada is not one sportsbook jurisdiction. The Province of B.C. identifies PlayNow as its only legal online gambling site. Ontario-labelled data is not automatically available to a B.C. user. Separate **reference books** (probability research) from **eligible destination books** (verified user market). Default to PlayNow research for B.C.; do not assert eligibility from provider region alone.
 
-The single highest-leverage upgrade. Without scraped stats, the model is just no-vig consensus, which is barely an edge over the books.
+Use publicly available data only when its terms permit the intended personal use. ESPN is an unofficial public endpoint, so put it behind an adapter with cache and failure status, not a guaranteed API label. Evaluate football-data.co.uk historical football CSVs and licensed free stats tiers separately before integrating; do not build reliability around blocked scraping or bypass anti-bot protections.
 
-- Cloudflare Worker per stat source. Cache aggressively. Respect robots.txt + rate limits.
-- **Soccer first:** FBref + Understat (xG, xGA, form, shot quality, lineup). ESPN for injuries / lineups.
-- **NFL/CFB second:** Pro-Football-Reference (EPA, success rate, opponent-adjusted), ESPN for injuries + weather.
-- **NBA third:** Basketball-Reference (pace, ORtg/DRtg, rest), ESPN for injuries.
-- Output normalized into a per-event `statContext` block on the snapshot (see `docs/STAT_SOURCES.md`).
+## The rounds (each has a release gate)
 
-**Exit criteria:**
+| Round | Implementation | Pass condition |
+|---|---|---|
+| 1. Truth and safety foundation | Remove browser secrets; local server proxy; explicit connection status; manual free-tier fetching; demo/research labels; zero actionable stake on stale/unvalidated evidence. | No secret served, failed API never masquerades as successful, sample produces no actionable recommendations, regression tests green. First implementation in this release; real authenticated feed remains blocked pending a rotated key. |
+| 2. Canadian destination and connection verification | Select PlayNow/other verified destination separately from reference books; provider capability inventory by sport, province, market and account plan; exact raw response retained. | One real authenticated free request proves an offered Canadian quote, its timestamp and peers; each unsupported book shows unavailable. No claim of Bet365 connection without its actual quote. |
+| 3. Immutable snapshot history | Local SQLite archive with raw response, provider timestamps, retrieval time, canonical event ID and content hash; append-only prediction ledger separate from user bet tracking. | Replay an archived snapshot into identical probabilities/EV; no post-event features in pre-event predictions; backup/restore tested. |
+| 4. Market identity and rule hardening | Exact event/participant mapping; full outcome set; regulation vs overtime, draw, handicap line, period and pushes; outlier/stale-peer exclusion; correlated provider sources identified. | Soccer 1X2 cannot match draw-no-bet or match-winner overtime; different lines cannot silently match; unknown settlement blocks action. |
+| 5. Explainable research UX | Shortlist first; top three research candidates; score/probability/value distinct; why/why-not drawer; quote age and minimum viable price; connections and advanced diagnostics secondary. | Phone and desktop user can identify source, expiry, model status and blockers without opening raw JSON. Formula reproduces values. Initial version in this release, improve after actual usage. |
+| 6. One sport-specific model | Start with EPL pre-match 1X2: time-decayed team attack/defence, home advantage, Poisson/Dixon–Coles candidate; add xG only if licensed/source coverage validated. Version features and model. | Rolling chronological holdout; compare against no-vig consensus and simple baseline. No unexplained injury/form multipliers, no fabricated player data. Soccer first; NFL/CFB and NBA only after this pipeline works. |
+| 7. Calibration and uncertainty | Walk-forward replay; calibration curves, Brier/log loss, probability intervals, missing-feature sensitivity, price slippage and multiple-testing controls. | Document sample sizes by league/odds band, bootstrap uncertainty and baseline comparison. Initial 500 resolved outcomes is a screening floor, not proof. Model promotion requires meaningful evidence, not one profitable week. |
+| 8. Prospective paper validation | Freeze model; automatically settle PAPER recommendations from verified results; record opening and closing equivalent-market prices and attainable quotes. No wagering. | Complete prospective cohort, all rejected and accepted candidates retained, positive edge survives price slippage and conservative uncertainty; no cherry-picked winners. CLV supports diagnosis, never guarantees profit. |
+| 9. Conservative manual decision support | Only after gates pass, apply lower-confidence-bound EV, conservative fractional Kelly, per-event/correlation limits, user-set loss and exposure ceilings; show "no bet" prominently. | Low-quality or uncertain estimate yields zero stake; loss limits never raise stakes to recover; replay correlated-event and worst-case loss tests. No account login, deposits or automated bets. |
+| 10. Private operation and drift controls | Local-only default; if remote hosting needed, authenticated server proxy and secret storage; source-health alerts, quota scheduling, calibration drift monitor, reproducible releases and rollback. | Source outage automatically removes actionability; expired rows lose action status without manual reload; budget persists across restart; access and deployment verified end-to-end. |
 
-- Every market in priority sports carries a `statContext` block.
-- Scrape latency under 30s end-to-end per sport.
-- Cache hit rate above 80% so we don't hammer source sites.
+## How the analysis must be shown
 
-## Phase 3: Sport-Specific Probability Models
+1. Offered decimal odds `d`: original bookmaker quote with provider, timestamp, event ID and settlement scope.
+2. Book implied probability: `1 / d` (includes bookmaker margin).
+3. Per-reference-book no-vig estimate for a complete mutually exclusive market: `(1 / d_i) / sum_j(1 / d_j)`. Show the other outcomes used. Reject incomplete markets; exchange commission requires separate treatment.
+4. Peer consensus: weighted no-vig probabilities. Publish contributors and weights; exclude destination book. Similar feeds are not independent evidence.
+5. Model probability `p`: disclose consensus-only vs independently feature-driven model; version, as-of inputs, validation cohort and uncertainty. Avoid calling it **true probability**.
+6. Estimated expected return per dollar: `p * d - 1`. At proposed odds, break-even model probability is `1 / d`. Minimum viable odds for desired EV `e` is `(1 + e) / p`, using conservative probability when uncertainty is available.
+7. Research priority score: this release uses 40 points for EV up to 10%, 30 for heuristic confidence and 30 for data quality. Each component is clamped 0–1 before weighting. This is an explicit design choice, NOT empirically validated odds of winning. Heuristic confidence is NOT calibrated accuracy. Scores cannot override blockers.
+8. Actionability is separate: demo, stale/future/missing times, insufficient fresh peers, started/unknown event, unvalidated model, unverified rules or province mean zero actionable stake. Legacy Kelly fields are hypothetical calculation outputs only.
 
-Replace pure no-vig consensus with calibrated, stat-aware models.
+A high-probability favourite can be overpriced; a longshot can have estimated positive EV but high loss probability. Do not boost ranking merely for a large payout and do not introduce parlays as a shortcut to profit.
 
-- Soccer: Poisson on xG with home advantage + form weighting.
-- NFL: EPA-derived team strength + opponent-adjusted, weather and injury overlays.
-- NBA: pace × efficiency + rest/back-to-back adjustments + key-player availability.
-- Each model versioned. Output goes through the same `model.probabilities` field already in the engine contract.
+## Free software implementation
 
-**Exit criteria:**
+Keep current zero-build vanilla JS UI and Node backend for the first release. No paid dependency needed. Next: SQLite for local immutable history, Python scikit-learn/scipy/statsmodels for reproducible modelling, and Playwright for journey tests. Select packages only when their round needs them; pin versions, record licences and run a real smoke test. Don't install speculative tools.
 
-- Each sport's model beats no-vig consensus on out-of-sample backtest CLV.
-- Calibration plot shipped per sport.
+## Sources
 
-## Phase 4: Backtest + Calibration Harness
+- Repo: https://github.com/koonergurjot/Bet365-Trading-Bot
+- Free plan and historical-data exclusion: https://the-odds-api.com/
+- Bookmaker catalogue and paid-only restrictions: https://the-odds-api.com/sports-odds-data/bookmaker-apis.html (retrieved directly with Python urllib).
+- Cost formula and provider quota headers: https://the-odds-api.com/liveapi/guides/v4/ (retrieved directly with Python urllib).
+- B.C. official guidance: https://www2.gov.bc.ca/gov/content/sports-culture/gambling-fundraising/gambling-in-bc
+- BCLC: https://corporate.bclc.com/our-social-purpose/100-legal-bclc.html
+- Working scoreboard probe: https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard (HTTP 200, six events; no claim of supported API contract).
 
-- Replay historical odds + stat snapshots through the live engine code.
-- Per-sport, per-market, per-odds-band ROI and CLV.
-- Calibration curves and Brier scores.
-- Block model promotion until backtest ROI is positive after slippage.
+## Explicit blockers
 
-## Phase 5: Always-On Signal Feed
-
-- Auto-poll every 60–120 seconds during active hours per sport.
-- Push notifications (browser / mobile) when a high-conviction signal appears.
-- Signal expires when Bet365 price moves past threshold.
-- Ranking surface optimized for "open phone → see top 3 → place bets" flow.
-
-**Exit criteria:**
-
-- Median time from signal-fire → user can place bet < 90 seconds.
-- Stale signals disappear automatically.
-- Signal feed runs unattended.
-
-## Phase 6: Reliability Hardening
-
-- Exposure limits per event / sport / time window.
-- Correlation detection (don't recommend three correlated soccer overs).
-- Reason codes on every accepted *and* rejected signal.
-- Source-freshness gating: kill signals when scrape lag exceeds threshold.
-
-## Phase 7: Audit + Continuous Learning
-
-- Log every emitted signal with full snapshot + stat context.
-- Optional manual outcome feedback (W/L/Void) so model calibration can update — *but* we do not duplicate Bet365's own bet ledger.
-- Compare emitted price vs closing price (CLV) to validate edge over time.
-
-## Out Of Scope (for now)
-
-- Automated bet placement on Bet365.
-- Bet-tracking UI / P&L charts (Bet365 owns this).
-- Sports outside the priority three (Soccer / NFL+CFB / NBA).
-- Trading-command-center integration. Brain stays standalone until profitable.
+Rotated server-side provider credential, actual free-account bookmaker response, production backend/access verification and sufficient prospective model evidence. This release is a research foundation, not a proven profitable bot. Nothing in the ten rounds guarantees a profitable calendar month.

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bet365 Signals &mdash; Mispriced Bets, Screened Live</title>
+    <title>Odds Research — Personal Canadian Workspace</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -16,8 +16,8 @@
       <div class="topbar-brand">
         <div class="topbar-logo" title="Bet365 Edge Brain &mdash; Signals Engine">&#x1F3AF;</div>
         <div>
-          <div class="topbar-title">Bet365 Signals</div>
-          <div class="topbar-sub">Mispriced bets, screened live &middot; place them yourself in Bet365</div>
+          <div class="topbar-title">Odds Research</div>
+          <div class="topbar-sub">Personal workspace · Canadian markets · research only</div>
         </div>
       </div>
 
@@ -49,7 +49,7 @@
       </div>
 
       <div class="flex gap-2">
-        <button class="btn btn-secondary btn-sm" id="btnReloadSample">&#x21BA; Sample</button>
+        <button class="btn btn-secondary btn-sm" id="btnReloadSample">Load demo</button>
         <button class="btn btn-live btn-sm" id="btnFetchLive" title="Fetch live odds">&#x26A1; Fetch Live</button>
         <button class="btn btn-secondary btn-sm" id="btnTogglePoll" title="Toggle auto-refresh">&#x25B7; Auto</button>
         <button class="btn btn-primary btn-sm" id="btnRun">&#x25B6; Run Engine</button>
@@ -59,7 +59,7 @@
     <!-- Tab Nav -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn active" role="tab" data-tab="signals" aria-selected="true">
-        &#x1F4CA; Signals
+        Research shortlist
         <span class="tab-badge" id="signalsBadge">0</span>
       </button>
       <button class="tab-btn" role="tab" data-tab="calculator" aria-selected="false">
@@ -71,31 +71,67 @@
         <span class="tab-badge" id="trackerBadge">0</span>
       </button>
       <button class="tab-btn" role="tab" data-tab="data" aria-selected="false">
-        &#x1F4C1; Data / JSON
+        Connections &amp; data
       </button>
     </nav>
 
     <!-- TAB: SIGNALS -->
     <section class="tab-content active" id="tab-signals" role="tabpanel">
 
-      <!-- Mission banner: sets expectation on every load -->
-      <div class="mission-banner" role="note" aria-label="Mission reminder" style="
-        margin: 12px 0 16px;
-        padding: 12px 16px;
-        border-left: 4px solid #22c55e;
-        background: rgba(34, 197, 94, 0.08);
-        border-radius: 6px;
-        font-size: 14px;
-        line-height: 1.5;
-        color: #d1fae5;
-      ">
-        <strong style="color:#22c55e;">Goal:</strong>
-        Spot Bet365 prices that are <em>mispriced vs true probability</em>.
-        The engine ranks the best edges below.
-        <strong>Place the bets yourself in Bet365 &mdash; this app only screens.</strong>
+      <div class="research-hero">
+        <div><div class="eyebrow">PERSONAL ODDS RESEARCH / CANADA</div><h1>Better evidence.<br>Not bigger promises.</h1><p>Inspect prices, compare estimates, and understand what is missing before making a decision.</p></div>
+        <div class="research-status-box" role="status" aria-live="polite"><span class="pill pill-amber" id="researchStatus">Research workspace · Not validated</span><p id="freshnessStatus">No snapshot loaded. No-bet until evidence is verified.</p><p>No demonstrated predictive accuracy. No automated bets. Losses are possible.</p></div>
+      </div>
+      <div class="connection-panel"><div><strong id="connectionStatus" role="status">Disconnected · checking backend readiness</strong><p>Server-side configuration only. Canadian quotes do not verify provincial eligibility.</p></div><button class="btn btn-secondary" id="btnCheckConnections">Check connections</button></div>
+      <div class="target-book-control"><label for="targetBookSelect">Research book</label><select id="targetBookSelect"><option value="PlayNow">PlayNow (BC) · eligibility unverified</option><option value="Bet365">Bet365 · not in free Canadian coverage</option><option value="BetMGM">BetMGM (CA-ON) · not verified for BC</option><option value="BetRivers">BetRivers (CA-ON) · not verified for BC</option><option value="Betano">Betano (CA-ON) · not verified for BC</option><option value="Proline">PROLINE (CA-ON) · not verified for BC</option><option value="Sports Interaction">Sports Interaction (CA-ON) · not verified for BC</option><option value="PointsBet">PointsBet (CA-ON) · not verified for BC</option></select><p>Coverage is not permission to wager. Verify local rules and each operator's terms.</p></div>
+      <div class="alert alert-blue" id="liveStatusBar" role="status" style="display:none"><span id="liveStatusMsg">Snapshot loaded · verify freshness</span></div>
+      <div class="alert alert-amber" id="sampleDisclaimer" role="status">No data loaded. Connect the same-origin backend to research real quotes, or explicitly load a non-actionable demo.</div>
+      <div class="filter-bar" id="filterBar">
+        <span class="filter-label">Sport</span>
+        <div class="filter-chips" id="sportFilters">
+          <button class="filter-chip active" data-filter-sport="all">All</button>
+        </div>
+        <div class="filter-divider"></div>
+        <span class="filter-label">Risk</span>
+        <div class="filter-chips" id="riskFilters">
+          <button class="filter-chip active" data-filter-risk="all">All</button>
+          <button class="filter-chip" data-filter-risk="Low">Low</button>
+          <button class="filter-chip" data-filter-risk="Medium">Medium</button>
+          <button class="filter-chip" data-filter-risk="High">High</button>
+        </div>
+        <div class="filter-divider"></div>
+        <span class="filter-label">Sort</span>
+        <select class="filter-select" id="sortSelect" aria-label="Sort research shortlist">
+          <option value="score">Research score (0–100)</option>
+          <option value="ev">Expected Value</option>
+          <option value="confidence">Model confidence heuristic</option>
+          <option value="stake">Action amount</option>
+        </select>
+        <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">&#x2B07; CSV</button>
       </div>
 
-      <div class="metric-grid" id="metricGrid">
+      <div class="panel" id="signalsPanel">
+        <div class="panel-header">
+          <div class="panel-title">Research shortlist</div>
+          <span class="text-muted" id="signalsSummary">Run the engine to see signals</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead class="sr-only"><tr><th colspan="8">Research candidates and supporting evidence</th></tr></thead>
+            <tbody id="signalsBody">
+              <tr><td colspan="8">
+                <div class="empty-state">
+                  <div class="empty-icon">&#x1F3AF;</div>
+                  <div class="empty-title">Your shortlist starts with real evidence</div>
+                  <div class="empty-sub">No markets are loaded automatically. Fetch a connected quote source, paste a snapshot in Data, or use Load demo to explore the interface. Demo results are paper only.</div>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <details class="diagnostics-disclosure" id="researchDiagnostics"><summary>Screen diagnostics &amp; hypothetical exposure</summary><p class="diagnostic-intro">These are internal research diagnostics, not proven accuracy. Action amounts remain zero when validation, freshness, settlement or eligibility is unverified.</p>      <div class="metric-grid" id="metricGrid">
         <div class="metric-card">
           <div class="metric-label">Total Markets</div>
           <div class="metric-value accent" id="mMarkets">&mdash;</div>
@@ -109,17 +145,17 @@
         <div class="metric-card">
           <div class="metric-label">Top EV</div>
           <div class="metric-value green" id="mTopEv">&mdash;</div>
-          <div class="metric-sub">best edge found</div>
+          <div class="metric-sub">estimate · not proven return</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Avg Confidence</div>
+          <div class="metric-label">Avg Research Score</div>
           <div class="metric-value" id="mAvgConf">&mdash;</div>
-          <div class="metric-sub">across signals</div>
+          <div class="metric-sub">heuristic · not win probability</div>
         </div>
         <div class="metric-card">
-          <div class="metric-label">Total Stake</div>
+          <div class="metric-label">Action amount</div>
           <div class="metric-value amber" id="mTotalStake">&mdash;</div>
-          <div class="metric-sub">if all placed</div>
+          <div class="metric-sub">zero unless gates pass</div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Avg Data Quality</div>
@@ -136,7 +172,7 @@
         <div class="panel-body">
           <div class="portfolio-grid">
             <div class="stat-info-card">
-              <div class="stat-info-label">Planned Stake</div>
+              <div class="stat-info-label">Action amount</div>
               <div class="stat-info-value" id="pPlannedStake">$0.00</div>
               <div class="stat-info-sub">after exposure caps</div>
             </div>
@@ -160,30 +196,6 @@
         </div>
       </div>
 
-      <div class="filter-bar" id="filterBar">
-        <span class="filter-label">Sport</span>
-        <div class="filter-chips" id="sportFilters">
-          <button class="filter-chip active" data-filter-sport="all">All</button>
-        </div>
-        <div class="filter-divider"></div>
-        <span class="filter-label">Risk</span>
-        <div class="filter-chips" id="riskFilters">
-          <button class="filter-chip active" data-filter-risk="all">All</button>
-          <button class="filter-chip" data-filter-risk="Low">Low</button>
-          <button class="filter-chip" data-filter-risk="Medium">Medium</button>
-          <button class="filter-chip" data-filter-risk="High">High</button>
-        </div>
-        <div class="filter-divider"></div>
-        <span class="filter-label">Sort</span>
-        <select class="filter-select" id="sortSelect">
-          <option value="score">Score (default)</option>
-          <option value="ev">Expected Value</option>
-          <option value="confidence">Confidence</option>
-          <option value="stake">Stake amount</option>
-        </select>
-        <button class="btn btn-secondary btn-sm ml-auto" id="btnExportCsv">&#x2B07; CSV</button>
-      </div>
-
       <div class="panel">
         <div class="panel-header">
           <div class="panel-title">&#x1F50D; Signal Diagnostics</div>
@@ -202,7 +214,7 @@
               <div class="stat-info-sub">candidate selections blocked</div>
             </div>
             <div class="stat-info-card">
-              <div class="stat-info-label">Missing Bet365</div>
+              <div class="stat-info-label">Missing selected book</div>
               <div class="stat-info-value" id="diagMissingBet365">0</div>
               <div class="stat-info-sub">markets ignored by engine</div>
             </div>
@@ -216,45 +228,7 @@
         </div>
       </div>
 
-      <div class="panel" id="signalsPanel">
-        <div class="panel-header">
-          <div class="panel-title">&#x1F4C8; Value Signals</div>
-          <span class="text-muted" id="signalsSummary">Run the engine to see signals</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Bet / Event</th>
-                <th class="right">Bet365</th>
-                <th class="right">Fair Value</th>
-                <th class="right">EV</th>
-                <th class="right">Kelly Stake</th>
-                <th class="center">Risk</th>
-                <th class="right">Data Quality</th>
-                <th class="center">Action</th>
-              </tr>
-            </thead>
-            <tbody id="signalsBody">
-              <tr><td colspan="8">
-                <div class="empty-state">
-                  <div class="empty-icon">&#x1F3AF;</div>
-                  <div class="empty-title">No signals yet</div>
-                  <div class="empty-sub">Click &#x26A1; Fetch Live for real odds, or &#x25B6; Run Engine on sample data</div>
-                </div>
-              </td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="alert alert-blue" id="liveStatusBar" role="status" style="display:none">
-        &#x1F534; <span id="liveStatusMsg">Live data active</span>
-      </div>
-
-      <div class="alert alert-amber" id="sampleDisclaimer" role="alert">
-        &#x26A0;&#xFE0F; <span>Sample data only &mdash; click <strong>&#x26A1; Fetch Live</strong> to scan real odds from The Odds API + OddsBlaze. Keys in <strong>src/config.js</strong>.</span>
-      </div>
+      </details>
 
     </section>
 
@@ -263,14 +237,14 @@
       <div class="panel">
         <div class="panel-header">
           <div class="panel-title">&#x1F9EE; Probability &amp; Value Calculator</div>
-          <span class="text-muted">Manually evaluate any bet before placing it</span>
+          <span class="text-muted">Explore assumptions · hypothetical output only</span>
         </div>
         <div class="panel-body">
           <div class="calc-layout">
             <div class="flex flex-col gap-3">
               <div class="controls-grid">
                 <div class="field">
-                  <label class="field-label" for="calcOdds">Decimal Odds (Bet365)</label>
+                  <label class="field-label" for="calcOdds">Decimal Odds (offered book)</label>
                   <input type="number" id="calcOdds" min="1.01" step="0.01" value="2.10" />
                 </div>
                 <div class="field">
@@ -288,14 +262,14 @@
               </div>
               <div class="mt-3">
                 <div class="alert alert-blue" style="font-size:12px">
-                  &#x1F4A1; <span><strong>How to use:</strong> Enter Bet365 decimal odds and your probability estimate. Positive EV = profitable long-term if your probability is correct.</span>
+                  &#x1F4A1; <span><strong>How to use:</strong> Enter offered decimal odds and your probability estimate. EV = p * decimal - 1. This is hypothetical, not validation or a betting recommendation.</span>
                 </div>
               </div>
             </div>
             <div>
               <div class="calc-result" id="calcResults">
                 <div class="calc-row">
-                  <span class="calc-row-label">Implied probability (Bet365)</span>
+                  <span class="calc-row-label">Implied probability (offered book)</span>
                   <span class="calc-row-value" id="calcImplied">&mdash;</span>
                 </div>
                 <div class="calc-row">
@@ -319,7 +293,7 @@
                   <span class="calc-row-value" id="calcFracKelly">&mdash;</span>
                 </div>
                 <div class="calc-row">
-                  <span class="calc-row-label">Stake amount</span>
+                  <span class="calc-row-label">Action amount</span>
                   <span class="calc-row-value" id="calcStakeAmt">&mdash;</span>
                 </div>
                 <div class="calc-row">
@@ -516,7 +490,7 @@
               <strong>The Odds API</strong> (primary, quota-tracked and budgeted in-app) &middot;
               <strong>OddsBlaze</strong> (supplementary, conservatively throttled in-app) &middot;
               <strong>TheSportsDB</strong> (metadata, gently rate-limited and cached).
-              Keys are in <code>src/config.js</code>. For shared/deployed use, proxy via Cloudflare Worker.
+              Private credentials belong only in server-side secrets. Readiness is checked through <code>/api/status</code>; configured does not mean coverage or eligibility is verified.
             </div>
           </div>
         </div>
@@ -527,7 +501,7 @@
           <div class="panel-title">&#x1F4C1; Market Snapshot JSON</div>
           <div class="flex gap-2">
             <button class="btn btn-secondary btn-sm" id="btnFormatJson">Format JSON</button>
-            <button class="btn btn-secondary btn-sm" id="btnReloadSample2">Load Sample</button>
+            <button class="btn btn-secondary btn-sm" id="btnReloadSample2">Load demo</button>
             <button class="btn btn-primary btn-sm" id="btnRunFromData">&#x25B6; Run Engine</button>
           </div>
         </div>
@@ -578,7 +552,7 @@
 
     </section>
 
-    <div id="toastContainer"></div>
+    <div id="toastContainer" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>
   </body>
 </html>
