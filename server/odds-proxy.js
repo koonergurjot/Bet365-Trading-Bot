@@ -1,9 +1,17 @@
 import { existsSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { observeBooks, VERIFICATION_TTL_MS } from './verification.js';
 export const SPORTS = ['soccer_epl','soccer_spain_la_liga','soccer_italy_serie_a','soccer_germany_bundesliga','soccer_france_ligue_one','soccer_uefa_champs_league','soccer_uefa_europa_league','americanfootball_nfl','americanfootball_ncaaf','basketball_nba'];
 const fail = (status,error) => ({status,body:{error}});
-export function createOddsProxy({ env = process.env, fetchImpl = fetch, ledgerPath = resolve('.odds-budget.json'), timeoutMs = 8000 } = {}) {
+export function createOddsProxy({ env = process.env, fetchImpl = fetch, ledgerPath = resolve('.odds-budget.json'), timeoutMs = 8000, now = Date.now } = {}) {
   const cache = new Map(), pending = new Map();
+  let verification={state:env.ODDS_API_KEY?'not_checked':'unconfigured',checkedAt:null,sport:null,region:'ca',market:'h2h',eventCount:0,books:[],error:null};
+  let verifiedPayload=null, verifiedObservedAt=null;
+  const currentVerification=()=>{
+    if(!['verified','stale'].includes(verification.state)) return verification;
+    const age=now()-Date.parse(verification.checkedAt);
+    return {...verification,state:age>=0 && age<=VERIFICATION_TTL_MS?'verified':'stale',books:observeBooks(verifiedPayload,verification.sport,now(),env.ODDS_API_KEY,verifiedObservedAt)};
+  };
   const month=()=>new Date().toISOString().slice(0,7);
   const limit=Math.min(500,Math.max(0,Number(env.ODDS_MONTHLY_BUDGET??450)||0));
   let ledger={month:month(),spent:0,remaining:null},broken=false;
@@ -14,9 +22,39 @@ export function createOddsProxy({ env = process.env, fetchImpl = fetch, ledgerPa
   const save=()=>{if(ledgerPath){writeFileSync(ledgerPath+'.tmp',JSON.stringify(ledger),{mode:0o600});renameSync(ledgerPath+'.tmp',ledgerPath);}};
   return { async request(path, {manual=false} = {}) {
     if(ledger.month!==month()) ledger={month:month(),spent:0,remaining:null};
-    if (path === '/api/odds/status') return { status:200, body:{ configured:Boolean(env.ODDS_API_KEY), manualOnly:true, budget:{limit,spent:ledger.spent,remaining:ledger.remaining,available:!broken,month:ledger.month}, oddsBlaze:{enabled:false} } };
-    if (!env.ODDS_API_KEY) return fail(503,'Odds connection is not configured.');
+    if (path === '/api/odds/status') return { status:200, body:{ configured:Boolean(env.ODDS_API_KEY), manualOnly:true, verification:currentVerification(), budget:{limit,spent:ledger.spent,remaining:ledger.remaining,available:!broken,month:ledger.month}, oddsBlaze:{enabled:false} } };
     const url = new URL(path,'http://localhost');
+    if(url.pathname==='/api/odds/verify') {
+      const sport=url.searchParams.get('sport');
+      const reject=(status,error)=>{
+        verifiedPayload=null;
+        verification={state:'failed',checkedAt:new Date(now()).toISOString(),sport:SPORTS.includes(sport)?sport:null,region:'ca',market:'h2h',eventCount:0,books:[],error};
+        return {status,body:{verification}};
+      };
+      if(!manual) return reject(403,'Manual request required.');
+      if(!SPORTS.includes(sport) || [...url.searchParams.keys()].some(k=>k!=='sport') || url.searchParams.getAll('sport').length!==1) return reject(400,'Unsupported verification parameter or sport.');
+      if(!env.ODDS_API_KEY) {
+        verification={state:'unconfigured',checkedAt:null,sport,region:'ca',market:'h2h',eventCount:0,books:[],error:'Odds connection is not configured.'};
+        return {status:503,body:{verification}};
+      }
+      const result=await this.request(`/api/odds/sports/${sport}/odds?regions=ca&markets=h2h&oddsFormat=decimal&dateFormat=iso`,{manual:true});
+      const checkedAt=new Date(now()).toISOString();
+      verifiedPayload=null;
+      verification={state:result.status===200?'verified':'failed',checkedAt,sport,region:'ca',market:'h2h',eventCount:0,books:[],error:result.status===200?null:result.body.error};
+      if(result.status===200) {
+        try {
+          verification.books=observeBooks(result.body,sport,now(),env.ODDS_API_KEY,result.receivedAt);
+          verification.eventCount=result.body.length;
+          verifiedPayload=result.body;
+          verifiedObservedAt=result.receivedAt;
+        } catch {
+          verification={...verification,state:'failed',eventCount:0,books:[],error:'Invalid provider response.'};
+          return {status:502,body:{verification},headers:result.headers};
+        }
+      }
+      return {status:result.status,body:{verification},headers:result.headers};
+    }
+    if (!env.ODDS_API_KEY) return fail(503,'Odds connection is not configured.');
     const match = url.pathname.match(/^\/api\/odds\/sports\/([a-z0-9_]+)\/odds$/);
     const sportsList=url.pathname==='/api/odds/sports';
     if (!sportsList && (!match || !SPORTS.includes(match[1]))) return fail(400,'Unsupported sport.');
@@ -50,7 +88,8 @@ export function createOddsProxy({ env = process.env, fetchImpl = fetch, ledgerPa
         let body=await res.json();
         if(!Array.isArray(body)) return fail(502,'Invalid provider response.');
         if(sportsList) body=body.filter(s=>SPORTS.includes(s.key));
-        const result={status:200,body,headers};
+        if(controller.signal.aborted) return fail(504,'Odds provider timed out.');
+        const result={status:200,body,headers,receivedAt:now()};
         cache.set(cacheKey,{result,expires:Date.now()+(sportsList?3600000:300000)});
         return result;
       } catch {return fail(502,'Odds provider unavailable.');}

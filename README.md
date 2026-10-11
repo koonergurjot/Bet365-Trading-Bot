@@ -1,6 +1,24 @@
-# Canadian Odds Research / Bet365 Edge Brain
+# Canadian Odds Research
 
-A private, manually operated odds-research app for Gurjot. It compares an offered bookmaker price with peer no-vig consensus and a disclosed probability estimate. **It does not place bets, guarantee profit, or claim a calibrated win rate.**
+[![CI](https://github.com/koonergurjot/Bet365-Trading-Bot/actions/workflows/ci.yml/badge.svg)](https://github.com/koonergurjot/Bet365-Trading-Bot/actions/workflows/ci.yml)
+
+**[Open the app](https://bet365-trading-bot.pages.dev)** · [Connection setup](docs/CONNECTION_SETUP.md) · [Round two](docs/ROUND_TWO.md) · [Ten-round roadmap](docs/ROADMAP.md)
+
+Personal, manually operated odds research for Gurjot. Compare an offered bookmaker price with peer no-vig consensus and a disclosed probability estimate. **No automated betting, guaranteed profit or claimed calibrated win rate.**
+
+> **Hosted page:** demonstration/research tools, not an enabled private live-odds service.<br>
+> **Local backend:** manual free-tier fetching and source verification, once a rotated authorized provider key is configured securely.<br>
+> **Live coverage:** must be established from an actual response, not a bookmaker catalogue or test fixture.
+
+## Start here
+
+| What you want | Where to go |
+|---|---|
+| Inspect the interface without credentials | [Hosted app](https://bet365-trading-bot.pages.dev): load the explicitly labelled demo or use the calculator |
+| Check whether a source is ready | Connections & data: distinguish missing key, configured, verified, failed and stale |
+| Verify Canadian coverage | Local backend: explicitly verify one selected sport; inspect returned bookmaker coverage and quote ages |
+| Understand a candidate | Expand evidence: contributors, estimated probability, EV formula and no-bet blockers |
+| See what comes next | [Release-gated roadmap](docs/ROADMAP.md) |
 
 ## Current release
 

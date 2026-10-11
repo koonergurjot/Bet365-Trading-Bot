@@ -83,6 +83,12 @@
         <div class="research-status-box" role="status" aria-live="polite"><span class="pill pill-amber" id="researchStatus">Research workspace · Not validated</span><p id="freshnessStatus">No snapshot loaded. No-bet until evidence is verified.</p><p>No demonstrated predictive accuracy. No automated bets. Losses are possible.</p></div>
       </div>
       <div class="connection-panel"><div><strong id="connectionStatus" role="status">Disconnected · checking backend readiness</strong><p>Server-side configuration only. Canadian quotes do not verify provincial eligibility.</p></div><button class="btn btn-secondary" id="btnCheckConnections">Check connections</button></div>
+      <p id="deploymentNotice" class="alert alert-amber" role="status">Checking backend mode. Live actions require a private server-side connection.</p>
+      <div class="feed-controls">
+        <div class="field"><label for="selectedSport">Selected feed sport</label><select id="selectedSport"><option value="soccer_epl">Soccer · English Premier League (EPL)</option></select></div>
+        <button class="btn btn-secondary" id="btnVerifyFeed" disabled aria-describedby="verificationCost">Verify selected feed</button>
+        <p id="verificationCost">Manual verification: maximum 1 free-tier credit for one uncached EPL / ca / h2h request. No auto-verification or paid upgrades. Check connections costs no odds credit.</p>
+      </div>
       <div class="target-book-control"><label for="targetBookSelect">Research book</label><select id="targetBookSelect"><option value="PlayNow">PlayNow (BC) · eligibility unverified</option><option value="Bet365">Bet365 · not in free Canadian coverage</option><option value="BetMGM">BetMGM (CA-ON) · not verified for BC</option><option value="BetRivers">BetRivers (CA-ON) · not verified for BC</option><option value="Betano">Betano (CA-ON) · not verified for BC</option><option value="Proline">PROLINE (CA-ON) · not verified for BC</option><option value="Sports Interaction">Sports Interaction (CA-ON) · not verified for BC</option><option value="PointsBet">PointsBet (CA-ON) · not verified for BC</option></select><p>Coverage is not permission to wager. Verify local rules and each operator's terms.</p></div>
       <div class="alert alert-blue" id="liveStatusBar" role="status" style="display:none"><span id="liveStatusMsg">Snapshot loaded · verify freshness</span></div>
       <div class="alert alert-amber" id="sampleDisclaimer" role="status">No data loaded. Connect the same-origin backend to research real quotes, or explicitly load a non-actionable demo.</div>
@@ -443,6 +449,17 @@
     <!-- TAB: DATA / JSON -->
     <section class="tab-content" id="tab-data" role="tabpanel">
 
+      <div class="panel" id="connectionEvidencePanel"><div class="panel-header"><h2 class="panel-title">Observed Canadian feed coverage</h2></div><div class="panel-body">
+        <ol id="connectionChecklist" class="connection-checklist" aria-label="Connection verification checklist">
+          <li id="checkBackend">Backend readiness · not checked</li>
+          <li id="checkSecret">Server-side provider configuration · not checked</li>
+          <li id="checkFeed">Selected EPL / ca / h2h feed · not verified</li>
+          <li>Canadian / Ontario eligibility · unverified; no wagering permission inferred</li>
+          <li>Model and settlement validation · unverified; research only / no bet</li>
+        </ol>
+        <p id="coverageSummary" role="status">No feed verified. Configured does not mean verified.</p>
+        <div id="coverageInventory" aria-live="polite">No observed bookmaker quotes. No coverage established.</div>
+      </div></div>
       <div class="panel" id="liveDataPanel">
         <div class="panel-header">
           <div class="panel-title">&#x1F534; Live Data Status</div>
@@ -552,6 +569,12 @@
 
     </section>
 
+    <footer class="app-footer" aria-label="Project documentation">
+      <span>Private odds research · no automated bets</span>
+      <a href="https://github.com/koonergurjot/Bet365-Trading-Bot">Repository</a>
+      <a href="https://github.com/koonergurjot/Bet365-Trading-Bot/blob/main/docs/ROADMAP.md">Roadmap</a>
+      <a href="https://github.com/koonergurjot/Bet365-Trading-Bot/blob/main/docs/CONNECTION_SETUP.md">Connection setup</a>
+    </footer>
     <div id="toastContainer" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>
   </body>

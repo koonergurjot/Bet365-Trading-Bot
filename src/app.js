@@ -14,6 +14,7 @@ import {
   clamp
 } from "./engine/oddsMath.js";
 import * as liveData from "./data/liveDataManager.js";
+import { summarizeConnectionCoverage } from "./data/connectionCoverage.js";
 
 // ── State ────────────────────────────────────────────────────
 let currentReport   = null;
@@ -26,6 +27,9 @@ let sortKey         = "score";
 let isLiveMode      = false;     // true once live data has been loaded
 let pendingTrackedSignal = null;
 let currentVisibleRecommendations = [];
+let connectionStatus = null;
+let verificationBusy = false;
+let liveFetchBusy = false;
 
 // ── Restore bet tracker from localStorage ────────────────────
 try {
@@ -204,6 +208,8 @@ function bindEvents() {
 
   // ── Live data ─────────────────────────────────────────────
   $("btnCheckConnections").addEventListener("click", checkConnections);
+  $("btnVerifyFeed").addEventListener("click", verifySelectedFeed);
+  $("selectedSport").addEventListener("change", renderConnections);
   $("targetBookSelect").addEventListener("change", () => { if (currentSnapshot) runEngine(currentSnapshot); });
   els.btnFetchLive.addEventListener("click",   fetchAndRunLive);
   els.btnFetchLive2.addEventListener("click",  fetchAndRunLive);
@@ -222,20 +228,64 @@ function switchTab(tab) {
   });
 }
 
+function renderConnections() {
+  const coverage = summarizeConnectionCoverage(connectionStatus, { sport:$("selectedSport").value });
+  const descriptions = {
+    unconfigured:"Disconnected · configure a provider in server-side secrets; no feed verified",
+    not_checked:"Provider configured · selected feed not verified",
+    verified:coverage.eventCount === 0 ? "Feed verified · no events returned; no book coverage established" : "Feed verified · observed quotes only; eligibility and model not verified",
+    failed:"Verification failed · no book coverage established",
+    stale:"Verification stale · no current coverage verified; repeat manual verification if needed",
+    invalid:"Invalid verification evidence · no current coverage verified"
+  };
+  const message = connectionStatus ? descriptions[coverage.state] : "Disconnected · /api/status unavailable. Start the local backend or use a private same-origin backend; server-side secrets only.";
+  $("connectionStatus").textContent = message;
+  $("checkBackend").textContent = coverage.liveEnabled ? "Backend readiness · available for manual requests" : "Backend readiness · unavailable for live requests";
+  $("checkSecret").textContent = coverage.configured ? "Server-side provider configuration · configured, NOT proof of feed coverage" : "Server-side provider configuration · unconfigured; set secrets on the backend only";
+  $("checkFeed").textContent = `Selected EPL / ca / h2h feed · ${coverage.state}${coverage.feedVerified ? ` · ${coverage.eventCount} events returned` : " · no current verification"}`;
+  $("coverageSummary").textContent = `${message}${coverage.checkedAt ? ` · Checked: ${coverage.checkedAt}` : ""}${coverage.error ? ` · ${typeof coverage.error === "string" ? coverage.error : coverage.error.message ?? "Provider error"}` : ""}`;
+  // All external strings pass through esc(); numeric ages are locally computed.
+  $("coverageInventory").innerHTML = coverage.books.length ? coverage.books.map(book => `<article class="coverage-book"><h3>${esc(book.title)}</h3><p>${esc(book.key)} · ${esc(book.quoteCount)} observed quotes · ${esc(book.freshQuoteCount)} fresh quotes</p><p>${esc(book.freshness)} · ${book.ageMinutes === null ? "Age unknown" : `${Math.floor(book.ageMinutes)} minutes old`} · Last quote: ${esc(book.lastUpdate ?? "Missing")}</p><p>Eligibility: ${esc(book.eligibility)}</p></article>`).join("") : "No observed bookmaker quotes. No coverage established.";
+  $("btnVerifyFeed").disabled = verificationBusy || liveFetchBusy || !coverage.liveEnabled || !coverage.configured;
+  $("btnCheckConnections").disabled = verificationBusy;
+  $("selectedSport").disabled = verificationBusy || liveFetchBusy;
+  [els.btnFetchLive, els.btnFetchLive2].forEach(button => { button.disabled = !coverage.liveEnabled || !coverage.configured || verificationBusy || liveFetchBusy; });
+  $("deploymentNotice").textContent = connectionStatus?.deploymentMode === "hosted-static"
+    ? "Hosted-static demo: live fetching and verification are disabled. Use localhost or an authenticated private backend with server-side secrets. Demo and calculator remain available."
+    : !connectionStatus || !coverage.liveEnabled
+    ? "Live backend unavailable: use localhost or an authenticated private backend. Demo and calculator remain available; never enter a provider key in the browser."
+    : "Local backend ready. Live data and verification are explicit manual actions; credentials stay server-side. No automatic bets or paid data.";
+}
+
 async function checkConnections() {
-  const label = $("connectionStatus");
-  label.textContent = "Checking server-side connection readiness…";
+  if (verificationBusy) return;
+  $("connectionStatus").textContent = "Checking server-side connection readiness…";
   try {
     const response = await fetch("/api/status", { cache:"no-store" });
     if (!response.ok) throw new Error("Backend unavailable");
-    const status = await response.json();
-    const providers = status.providers && typeof status.providers === "object" ? Object.values(status.providers) : [];
-    const configured = providers.some(provider => provider?.configured === true);
-    label.textContent = configured
-      ? "Provider configured · quote coverage and eligibility not verified"
-      : "Disconnected · configure a provider in server-side secrets, then check connections";
-  } catch {
-    label.textContent = "Disconnected · /api/status unavailable. Start the local backend or deploy the same-origin Worker; configure server-side secrets.";
+    connectionStatus = await response.json();
+  } catch { connectionStatus = null; }
+  renderConnections();
+}
+
+async function verifySelectedFeed() {
+  if (verificationBusy || liveFetchBusy || connectionStatus?.liveEnabled !== true || connectionStatus?.providers?.oddsApi?.configured !== true) return;
+  verificationBusy = true;
+  renderConnections();
+  $("btnVerifyFeed").textContent = "Verifying selected feed…";
+  const sport = $("selectedSport").value;
+  try {
+    const response = await fetch(`/api/odds/verify?sport=${encodeURIComponent(sport)}`, {method:"GET", cache:"no-store", headers:{"X-Odds-Manual":"1"}});
+    const result = await response.json();
+    if (!result?.verification || typeof result.verification !== "object") throw new Error("Invalid verification response");
+    connectionStatus.providers.oddsApi.verification = result.verification;
+    if (!response.ok && result.verification.state !== "failed") throw new Error("Verification request failed");
+  } catch (err) {
+    connectionStatus.providers.oddsApi.verification = {state:"failed", sport, error:err.message};
+  } finally {
+    verificationBusy = false;
+    $("btnVerifyFeed").textContent = "Verify selected feed";
+    renderConnections();
   }
 }
 
@@ -247,6 +297,7 @@ async function boot() {
   // Local clock-only expiry refresh; never fetch provider odds on a timer.
   setInterval(() => {
     updateLiveStatus();
+    renderConnections();
     if (currentReport) { renderSignals(); renderMetrics(currentReport); renderPortfolio(currentReport); }
   }, 30000);
 }
@@ -281,12 +332,15 @@ function applyLiveSnapshot(snapshot, { switchToSignals = false, notify = true } 
 }
 
 async function fetchAndRunLive() {
+  if (connectionStatus?.liveEnabled !== true || connectionStatus?.providers?.oddsApi?.configured !== true || verificationBusy || liveFetchBusy) return;
+  liveFetchBusy = true;
+  renderConnections();
   const btns = [els.btnFetchLive, els.btnFetchLive2];
   btns.forEach((b) => { if (b) { b.disabled = true; b.textContent = "Fetching..."; } });
-  showToast("Fetching live odds across all sports...", "info");
+  showToast("Fetching live odds for the selected EPL feed (ca / h2h)…", "info");
 
   try {
-    const snapshot = await liveData.fetchLiveSnapshot({ manual: true });
+    const snapshot = await liveData.fetchLiveSnapshot({ sports:[$("selectedSport").value], manual: true });
     applyLiveSnapshot(snapshot, { switchToSignals: true });
 
     const status = liveData.getFullStatus();
@@ -307,9 +361,11 @@ async function fetchAndRunLive() {
     console.error("[App] fetchAndRunLive:", err);
     updateLiveStatus();
   } finally {
+    liveFetchBusy = false;
     btns.forEach((b) => {
-      if (b) { b.disabled = false; b.textContent = "Fetch Live"; }
+      if (b) b.textContent = "Fetch Live";
     });
+    renderConnections();
   }
 }
 

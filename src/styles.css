@@ -717,3 +717,21 @@ summary { cursor:pointer; min-height:44px; padding:12px 0; color:var(--text-seco
   .calc-row { gap:12px; }
 }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none !important; transition:none !important; } }
+
+/* Connection observations are evidence, never a sportsbook catalogue. */
+.feed-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px 20px; align-items:end; padding:18px 20px; border:1px solid var(--border-normal); border-radius:12px; background:var(--bg-surface); }
+.feed-controls label { color:var(--text-secondary); font-size:12px; font-weight:600; }
+.feed-controls p { grid-column:1/-1; color:var(--text-muted); font-size:12px; line-height:1.65; }
+.connection-checklist { padding-left:20px; color:var(--text-secondary); line-height:1.75; margin-bottom:18px; }
+#coverageSummary { color:var(--amber); line-height:1.6; margin-bottom:18px; overflow-wrap:anywhere; }
+#coverageInventory { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; color:var(--text-secondary); }
+.coverage-book { padding:16px; background:var(--bg-base); border:1px solid var(--border-normal); border-radius:8px; overflow-wrap:anywhere; }
+.coverage-book h3 { font-size:15px; margin-bottom:10px; }
+.coverage-book p { font-size:12px; line-height:1.7; }
+.app-footer { display:flex; flex-wrap:wrap; gap:12px 22px; max-width:1280px; margin:0 auto; padding:24px 28px 36px; color:var(--text-muted); font-size:12px; border-top:1px solid var(--border-normal); }
+.app-footer a { color:var(--accent-bright); padding:6px 0; }
+@media(max-width:760px) {
+  .feed-controls { grid-template-columns:minmax(0,1fr); padding:16px; }
+  #coverageInventory { grid-template-columns:minmax(0,1fr); }
+  .app-footer { padding:20px 14px; }
+}
