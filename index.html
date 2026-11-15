@@ -59,6 +59,7 @@
     <!-- Tab Nav -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn active" role="tab" data-tab="picks" aria-selected="true">Today's picks <span class="tab-badge" id="picksBadge">0</span></button>
+      <button class="tab-btn" role="tab" data-tab="check" aria-selected="false">Price check</button>
       <button class="tab-btn" role="tab" data-tab="signals" aria-selected="false">
         Research shortlist
         <span class="tab-badge" id="signalsBadge">0</span>
@@ -79,6 +80,11 @@
     <!-- TAB: TODAY'S PICKS -->
     <section class="tab-content active" id="tab-picks" role="tabpanel">
       <div id="picksRoot" aria-live="polite">Loading picks…</div>
+    </section>
+
+    <!-- TAB: PRICE CHECK -->
+    <section class="tab-content" id="tab-check" role="tabpanel">
+      <div id="checkRoot" aria-live="polite">Loading reference prices…</div>
     </section>
 
     <!-- TAB: SIGNALS -->
@@ -584,5 +590,6 @@
     <div id="toastContainer" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>
     <script type="module" src="./src/picks-ui.js"></script>
+    <script type="module" src="./src/check-ui.js"></script>
   </body>
 </html>

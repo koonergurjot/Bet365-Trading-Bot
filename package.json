@@ -8,7 +8,9 @@
     "test": "node tests/run-tests.js",
     "serve": "node scripts/local-server.js",
     "watch": "node scripts/watch-and-push.js",
-    "check": "npm test"
+    "check": "npm test",
+    "refresh": "node scripts/picks.js && node scripts/targets.js",
+    "backtest": "node scripts/backtest.js && node scripts/backtest-leagues.js"
   },
   "engines": {
     "node": ">=20"

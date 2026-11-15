@@ -756,3 +756,17 @@ summary { cursor:pointer; min-height:44px; padding:12px 0; color:var(--text-seco
 .no-bet{padding:28px;text-align:center;border:1px dashed var(--border-strong);border-radius:12px}
 .evidence{padding:14px 16px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface)}
 .evidence li{margin:6px 0;font-size:.88rem}
+
+/* Price check */
+.how{padding:12px 14px;border-radius:10px;background:var(--accent-dim);margin-bottom:12px;font-size:.9rem}
+.filters{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin-bottom:12px}
+.filters label{display:grid;gap:4px;font-size:.78rem}
+.filters input,.filters select,.odds-in{background:var(--bg-input);border:1px solid var(--border-normal);color:var(--text-primary);border-radius:8px;padding:6px 8px}
+.odds-in{width:120px}
+.check-table td,.check-table th{padding:8px 10px;vertical-align:top;text-align:left}
+.check-table small{color:var(--text-secondary,#9aa3b5)}
+.take b{color:var(--accent-bright);font-size:1.05rem}
+.grade{display:inline-block;min-width:22px;text-align:center;border-radius:6px;padding:2px 6px;font-weight:700}
+.gA{background:var(--green-dim);color:var(--green)}.gB{background:var(--amber-dim);color:var(--amber)}.gC{background:var(--red-dim);color:var(--red)}
+.verdict{font-size:.82rem;max-width:260px}
+.v-bet{color:var(--green)}.v-pass{color:var(--text-secondary,#9aa3b5)}

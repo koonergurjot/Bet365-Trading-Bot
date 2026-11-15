@@ -21,3 +21,8 @@ Time-decayed Poisson/Dixon-Coles model, refit weekly, walk-forward, 22,332 match
 ## Pipeline
 - `node scripts/picks.js` refreshes free fixtures, scans Bet365 vs Pinnacle/market no-vig, logs picks to `data/ledger.json`, settles finished picks (result + closing-line value), writes `src/data/picks.json` for the "Today's picks" tab.
 - Real-money gate stays closed until 100 settled paper picks with mean CLV >= +0.5%.
+
+## Phase two (2026-11-15)
+**Wider league test (`node scripts/backtest-leagues.js`, 20 leagues, 2016-2026, Bet365 vs Pinnacle, EV>=2%):** 3,208 bets, ROI +1.8% (CI -4.2% to +7.3%), mean CLV +1.6%. CLV is positive in 17 of 20 leagues and in both halves of the sample (early +1.9%, late +1.0%). Larger in lower leagues (SC3 +5.7%, T1/SC1 +2.5%, EC +2.1%, I2 +2.2%) but each has n~100-300, so single-league wins are not trustworthy. A second-source consensus filter lifts CLV slightly (+2.2%) and halves volume, but ROI is not better. Reading: a real but thin edge of roughly +1.5-2% of turnover. At 1% stakes on a $1,000 bankroll that is a few dollars a month in expectation, with swings of tens of dollars.
+
+**Free live reference (Polymarket, no key):** `node scripts/targets.js` pulls live pre-match prices for NFL, NBA, NHL, college football/basketball, MLS and the top European soccer leagues (436 games, 317 board lines on first run) and converts them into "take Bet365 at >= X" target odds. `node scripts/validate-polymarket.js` scores settled games: 371 outcomes (~190 games), Brier 0.199, no obvious miscalibration, sample small. This validates the reference, not a Bet365 edge.
