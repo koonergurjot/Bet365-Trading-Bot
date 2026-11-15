@@ -47,6 +47,7 @@ export function loadFootballData(dir) {
         max: trio(r, 'MaxH', 'MaxD', 'MaxA'),
         pinClose: trio(r, 'PSCH', 'PSCD', 'PSCA'),
         b365Close: trio(r, 'B365CH', 'B365CD', 'B365CA'),
+        bfe: trio(r, 'BFEH', 'BFED', 'BFEA'), bfeClose: trio(r, 'BFECH', 'BFECD', 'BFECA'), bw: trio(r, 'BWH', 'BWD', 'BWA'),
         ouB365: duo(r, 'B365>2.5', 'B365<2.5'), ouPin: duo(r, 'P>2.5', 'P<2.5'), ouAvg: duo(r, 'Avg>2.5', 'Avg<2.5'), ouPinClose: duo(r, 'PC>2.5', 'PC<2.5'),
       });
     }
