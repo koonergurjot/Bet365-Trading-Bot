@@ -1,0 +1,19 @@
+{
+ "generatedAt": "2026-11-15T08:25:30.158Z",
+ "bankroll": 1000,
+ "fixturesScanned": 54,
+ "gate": {
+  "open": false,
+  "settled": 0,
+  "pending": 0,
+  "paperRoi": null,
+  "meanClv": null,
+  "need": {
+   "settled": 100,
+   "clv": 0.005
+  },
+  "message": "Gate closed: 0/100 paper picks settled. Paper-trade only."
+ },
+ "picks": [],
+ "recent": []
+}

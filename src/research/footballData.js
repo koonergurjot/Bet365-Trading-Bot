@@ -16,6 +16,7 @@ function parseCsvLine(line) {
 }
 
 const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) && n > 1 ? n : null; };
+const duo = (r, a, b) => { const t = [num(r[a]), num(r[b])]; return t.every(Boolean) ? t : null; };
 const trio = (r, a, b, c) => { const t = [num(r[a]), num(r[b]), num(r[c])]; return t.every(Boolean) ? t : null; };
 
 function parseDate(d) {
@@ -46,6 +47,7 @@ export function loadFootballData(dir) {
         max: trio(r, 'MaxH', 'MaxD', 'MaxA'),
         pinClose: trio(r, 'PSCH', 'PSCD', 'PSCA'),
         b365Close: trio(r, 'B365CH', 'B365CD', 'B365CA'),
+        ouB365: duo(r, 'B365>2.5', 'B365<2.5'), ouPin: duo(r, 'P>2.5', 'P<2.5'), ouAvg: duo(r, 'Avg>2.5', 'Avg<2.5'), ouPinClose: duo(r, 'PC>2.5', 'PC<2.5'),
       });
     }
   }

@@ -735,3 +735,24 @@ summary { cursor:pointer; min-height:44px; padding:12px 0; color:var(--text-seco
   #coverageInventory { grid-template-columns:minmax(0,1fr); }
   .app-footer { padding:20px 14px; }
 }
+
+/* Today's picks */
+#picksRoot{display:grid;gap:16px}
+.gate{padding:14px 16px;border-radius:12px;border:1px solid var(--border-normal);background:var(--bg-panel)}
+.gate-closed{border-color:rgba(245,158,11,.45);background:var(--amber-dim)}
+.gate-open{border-color:rgba(34,197,94,.45);background:var(--green-dim)}
+.gate p{margin:6px 0}
+.gate-bar{height:6px;border-radius:3px;background:var(--bg-input);margin:8px 0;overflow:hidden}
+.gate-bar span{display:block;height:100%;background:var(--accent)}
+.picks-list{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+.pick-card{background:var(--bg-panel);border:1px solid var(--border-normal);border-radius:12px;padding:14px 16px}
+.pick-card header{display:flex;justify-content:space-between;font-size:.8rem;color:var(--text-secondary,#9aa3b5)}
+.pick-ev{color:var(--green);font-weight:600}
+.pick-card h3{margin:8px 0 12px;font-size:1.05rem}
+.pick-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center}
+.pick-grid b{display:block;font-size:1.1rem}
+.pick-grid small,.pick-meta{color:var(--text-secondary,#9aa3b5);font-size:.72rem}
+.pick-why{font-size:.85rem;line-height:1.4}
+.no-bet{padding:28px;text-align:center;border:1px dashed var(--border-strong);border-radius:12px}
+.evidence{padding:14px 16px;border:1px solid var(--border-subtle);border-radius:12px;background:var(--bg-surface)}
+.evidence li{margin:6px 0;font-size:.88rem}

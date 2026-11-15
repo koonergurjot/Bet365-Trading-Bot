@@ -58,7 +58,8 @@
 
     <!-- Tab Nav -->
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
-      <button class="tab-btn active" role="tab" data-tab="signals" aria-selected="true">
+      <button class="tab-btn active" role="tab" data-tab="picks" aria-selected="true">Today's picks <span class="tab-badge" id="picksBadge">0</span></button>
+      <button class="tab-btn" role="tab" data-tab="signals" aria-selected="false">
         Research shortlist
         <span class="tab-badge" id="signalsBadge">0</span>
       </button>
@@ -75,8 +76,13 @@
       </button>
     </nav>
 
+    <!-- TAB: TODAY'S PICKS -->
+    <section class="tab-content active" id="tab-picks" role="tabpanel">
+      <div id="picksRoot" aria-live="polite">Loading picks…</div>
+    </section>
+
     <!-- TAB: SIGNALS -->
-    <section class="tab-content active" id="tab-signals" role="tabpanel">
+    <section class="tab-content" id="tab-signals" role="tabpanel">
 
       <div class="research-hero">
         <div><div class="eyebrow">PERSONAL ODDS RESEARCH / CANADA</div><h1>Better evidence.<br>Not bigger promises.</h1><p>Inspect prices, compare estimates, and understand what is missing before making a decision.</p></div>
@@ -577,5 +583,6 @@
     </footer>
     <div id="toastContainer" role="status" aria-live="polite"></div>
     <script type="module" src="./src/app.js"></script>
+    <script type="module" src="./src/picks-ui.js"></script>
   </body>
 </html>
