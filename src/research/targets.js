@@ -32,7 +32,7 @@ export function buildBoard(games) {
       const fairOdds = 1 / o.prob; const minOdds = (1 + grade.minEdge) / o.prob;
       if (o.prob < 0.03 || minOdds > MAX_ODDS) continue; // hopeless longshots
       rows.push({
-        gameId: g.id, league: g.league, sport: g.sport, start: g.start, home: g.title, selection: o.name, title: g.title,
+        gameId: g.id, token: o.token, league: g.league, sport: g.sport, start: g.start, home: g.title, selection: o.name, title: g.title,
         fairProb: round(o.prob, 4), fairOdds: round(fairOdds, 3), minOdds: round(minOdds, 3), minAmerican: decimalToAmerican(minOdds),
         fairAmerican: decimalToAmerican(fairOdds), grade: grade.grade, minEdge: grade.minEdge, liquidity: Math.round(g.liquidity), spread: g.spread,
       });

@@ -96,3 +96,19 @@ export async function priceBefore(token, startMs, minutesBefore = 60) {
   const pts = (h.history || []).filter((p) => p.t <= t + 300);
   return pts.length ? pts[pts.length - 1].p : null;
 }
+
+export async function getEvent(id) {
+  const r = await getJson(`${GAMMA}/events?id=${encodeURIComponent(id)}`);
+  return Array.isArray(r) ? r[0] : r;
+}
+
+// Final result of one outcome token from a resolved event: 1 win, 0 loss, null unresolved/void.
+export function tokenResult(event, token) {
+  for (const m of (event?.markets || []).filter((x) => x.sportsMarketType === 'moneyline')) {
+    const toks = parseArr(m.clobTokenIds); const idx = toks.indexOf(token); if (idx < 0) continue;
+    const px = parseArr(m.outcomePrices).map(Number);
+    if (px.length && px.every((x) => x <= 0.01 || x >= 0.99) && px.some((x) => x >= 0.99)) return px[idx] >= 0.99 ? 1 : 0;
+    return null;
+  }
+  return null;
+}

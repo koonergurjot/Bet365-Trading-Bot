@@ -60,6 +60,7 @@
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn active" role="tab" data-tab="picks" aria-selected="true">Today's picks <span class="tab-badge" id="picksBadge">0</span></button>
       <button class="tab-btn" role="tab" data-tab="check" aria-selected="false">Price check</button>
+      <button class="tab-btn" role="tab" data-tab="proof" aria-selected="false">Proof</button>
       <button class="tab-btn" role="tab" data-tab="signals" aria-selected="false">
         Research shortlist
         <span class="tab-badge" id="signalsBadge">0</span>
@@ -85,6 +86,11 @@
     <!-- TAB: PRICE CHECK -->
     <section class="tab-content" id="tab-check" role="tabpanel">
       <div id="checkRoot" aria-live="polite">Loading reference prices…</div>
+    </section>
+
+    <!-- TAB: PROOF -->
+    <section class="tab-content" id="tab-proof" role="tabpanel">
+      <div id="proofRoot">Loading proof report…</div>
     </section>
 
     <!-- TAB: SIGNALS -->
@@ -591,5 +597,6 @@
     <script type="module" src="./src/app.js"></script>
     <script type="module" src="./src/picks-ui.js"></script>
     <script type="module" src="./src/check-ui.js"></script>
+    <script type="module" src="./src/proof-ui.js"></script>
   </body>
 </html>

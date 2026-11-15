@@ -3,6 +3,9 @@ import { verdict, parseOdds } from './research/targets.js';
 
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const us = (n) => (n > 0 ? `+${n}` : String(n));
+const PAPER_KEY = 'paperBets';
+const loadPaper = () => { try { return JSON.parse(localStorage.getItem(PAPER_KEY)) || []; } catch { return []; } };
+const savePaper = (a) => localStorage.setItem(PAPER_KEY, JSON.stringify(a));
 const state = { data: null, sport: 'all', q: '', bankroll: Number(localStorage.getItem('bankroll')) || 1000, gateOpen: false };
 
 function when(iso) {
@@ -35,6 +38,7 @@ function draw() {
       <label>Sport <select id="chkSport"><option value="all">All</option>${sports.map((s) => `<option ${s === state.sport ? 'selected' : ''}>${esc(s)}</option>`).join('')}</select></label>
       <label>Search <input id="chkQ" placeholder="team" value="${esc(state.q)}"></label>
       <label>Bankroll $ <input id="chkBank" type="number" min="0" value="${state.bankroll}"></label>
+      <button id="chkExport" type="button">Export paper bets (${loadPaper().length})</button>
       <small>${rows.length} of ${d.rows.length} lines · reference refreshed ${age < 1 ? 'under 1 hour' : age + ' hours'} ago (run <code>node scripts/targets.js</code>)</small>
     </section>
     <div class="table-wrap"><table class="check-table"><thead><tr><th>Kickoff</th><th>Selection</th><th>Fair chance</th><th>Take at ≥</th><th>Grade</th><th>Bet365 shows</th><th>Verdict</th></tr></thead>
@@ -53,8 +57,17 @@ function draw() {
     const res = verdict(r, odds, state.bankroll);
     cell.className = `verdict v-${res.status}`;
     const stake = res.status === 'bet' ? `<br><b>${state.gateOpen ? '$' + res.stake.toFixed(2) : 'Paper stake $' + res.stake.toFixed(2)}</b>` : '';
-    cell.innerHTML = `${res.status === 'bet' ? 'BET' : res.status === 'pass' ? 'PASS' : '?'} · ${esc(res.text)}${stake}`;
+    const logBtn = res.status === 'bet' ? '<br><button class="log-btn" type="button">Log paper bet</button>' : '';
+    cell.innerHTML = `${res.status === 'bet' ? 'BET' : res.status === 'pass' ? 'PASS' : '?'} · ${esc(res.text)}${stake}${logBtn}`;
+    const btn = cell.querySelector('.log-btn');
+    if (btn) btn.onclick = () => {
+      const list = loadPaper(); const id = `${r.gameId}|${r.selection}`;
+      if (list.some((x) => x.id === id)) { btn.textContent = 'Already logged'; return; }
+      list.push({ id, gameId: r.gameId, token: r.token, title: r.title, selection: r.selection, league: r.league, start: r.start, odds, fairProb: r.fairProb, stakeUnits: 1, loggedAt: new Date().toISOString() });
+      savePaper(list); btn.textContent = `Logged (${list.length} total)`; btn.disabled = true;
+    };
   });
+  root.querySelector('#chkExport').onclick = () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(loadPaper(), null, 1)], { type: 'application/json' })); a.download = 'paper-bets.json'; a.click(); };
   root.querySelector('#chkSport').onchange = (e) => { state.sport = e.target.value; draw(); };
   root.querySelector('#chkQ').onchange = (e) => { state.q = e.target.value.toLowerCase().trim(); draw(); };
   root.querySelector('#chkBank').onchange = (e) => { state.bankroll = Math.max(0, Number(e.target.value) || 0); localStorage.setItem('bankroll', state.bankroll); draw(); };

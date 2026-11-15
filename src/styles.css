@@ -770,3 +770,5 @@ summary { cursor:pointer; min-height:44px; padding:12px 0; color:var(--text-seco
 .gA{background:var(--green-dim);color:var(--green)}.gB{background:var(--amber-dim);color:var(--amber)}.gC{background:var(--red-dim);color:var(--red)}
 .verdict{font-size:.82rem;max-width:260px}
 .v-bet{color:var(--green)}.v-pass{color:var(--text-secondary,#9aa3b5)}
+.log-btn,#chkExport{background:var(--accent-dim);color:var(--accent-bright);border:1px solid var(--border-normal);border-radius:8px;padding:4px 10px;cursor:pointer;margin-top:4px}
+.evidence h4{margin:14px 0 6px}
